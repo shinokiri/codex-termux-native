@@ -1,0 +1,52 @@
+name: Termux formatting and build-script checks
+
+on:
+  push:
+    branches: ["termux/**"]
+    paths-ignore:
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: termux-format-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: just@1.51.0
+      - uses: facebook/install-dotslash@1e4e7b3e07eaca387acb98f1d4720e0bee8dbb6a # v2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.3"
+      - name: Test build preparation retries and package contents
+        run: python3 -m unittest discover -s scripts/termux -p 'test_*.py' -v
+      - name: Format repository
+        run: just fmt
+      - name: Check generated changes
+        if: always() && !cancelled()
+        run: |
+          git diff --binary > "${RUNNER_TEMP}/termux-format.patch"
+          git diff --exit-code
+      - name: Retain formatting corrections for review
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: termux-format-corrections
+          path: ${{ runner.temp }}/termux-format.patch
+          if-no-files-found: ignore
+          retention-days: 3

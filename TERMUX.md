@@ -41,6 +41,11 @@ read-only repository permissions, pinned action revisions, no account credential
 for Codex, and three-day retention for small correction patches. It does not
 publish packages or releases.
 
+`Termux formatting and build-script checks` independently runs the build-script
+tests and the complete `just fmt` command on code changes, including build recipe
+edits. It installs the formatter tools on its own runner and does not wait for
+the Android source build. The worktree must remain unchanged after formatting.
+
 ```sh
 just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command
 # Run in codex-rs:
