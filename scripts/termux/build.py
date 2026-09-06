@@ -217,9 +217,37 @@ def build_v8(args):
         or not (gn / "src_binding.rs").is_file()
     ):
         raise RuntimeError("Matching V8 archive and binding outputs are missing")
+    (gn / "v8-build.json").write_text(json.dumps(v8_fingerprint(gn), indent=2) + "\n")
+
+
+def v8_fingerprint(gn):
+    return {
+        "v8_commit": V8_COMMIT,
+        "target": TARGET,
+        "api": API,
+        "ndk": NDK,
+        "rust": RUST,
+        "recipe_sha256": digest(Path(__file__)),
+        "patch_sha256": digest(ROOT / "patches/termux-rusty-v8-bindgen.patch"),
+        "outputs": {
+            name: digest(gn / name)
+            for name in ("obj/librusty_v8.a", "src_binding.rs", "args.gn")
+        },
+    }
+
+
+def verify_v8(args):
+    gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
+    if json.loads((gn / "v8-build.json").read_text()) != v8_fingerprint(gn):
+        raise RuntimeError("V8 cache inputs or paired outputs differ from this recipe")
+    for flag in ("v8_enable_sandbox", "v8_enable_pointer_compression"):
+        if not re.search(rf"\b{flag}\s*=\s*true\b", (gn / "args.gn").read_text()):
+            raise RuntimeError(f"V8 is missing required flag: {flag}")
+    print("Verified matching V8 archive, binding, configuration and source recipe.")
 
 
 def build_codex(args):
+    verify_v8(args)
     gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
     env = build_env(args)
     env.update(
@@ -227,7 +255,6 @@ def build_codex(args):
             "CARGO_TARGET_DIR": str(args.work_dir / "codex-target"),
             "RUSTY_V8_ARCHIVE": str(gn / "obj/librusty_v8.a"),
             "RUSTY_V8_SRC_BINDING_PATH": str(gn / "src_binding.rs"),
-            "CODEX_SKIP_VENDORED_BWRAP": "1",
             "CARGO_PROFILE_RELEASE_DEBUG": "0",
             "CARGO_PROFILE_RELEASE_STRIP": "symbols",
             "CARGO_PROFILE_RELEASE_LTO": "false",
@@ -264,6 +291,7 @@ def digest(path):
 
 
 def package(args):
+    verify_v8(args)
     stage = args.work_dir / "package/codex-termux-native"
     (stage / "bin").mkdir(parents=True, exist_ok=True)
     (stage / "lib").mkdir(exist_ok=True)
@@ -295,6 +323,7 @@ def package(args):
         args.toolchain / "sysroot/usr/lib/aarch64-linux-android/libc++_shared.so",
         stage / "lib/libc++_shared.so",
     )
+    shutil.copy2(ROOT / "scripts/termux_smoke.py", stage / "smoke.py")
     licenses = stage / "licenses"
     licenses.mkdir(exist_ok=True)
     shutil.copy2(ROOT / "LICENSE", licenses / "codex.txt")
@@ -353,7 +382,9 @@ def package(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=["prepare", "v8", "codex", "package"])
+    parser.add_argument(
+        "stage", choices=["prepare", "v8", "verify-v8", "codex", "package"]
+    )
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--ndk", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, required=True)
@@ -366,9 +397,13 @@ def main():
         parser.error(f"Use a positive job count and Android NDK {NDK}")
     args.source = args.work_dir / "rusty-v8"
     args.toolchain = args.ndk / "toolchains/llvm/prebuilt/linux-x86_64"
-    {"prepare": prepare, "v8": build_v8, "codex": build_codex, "package": package}[
-        args.stage
-    ](args)
+    {
+        "prepare": prepare,
+        "v8": build_v8,
+        "verify-v8": verify_v8,
+        "codex": build_codex,
+        "package": package,
+    }[args.stage](args)
 
 
 if __name__ == "__main__":

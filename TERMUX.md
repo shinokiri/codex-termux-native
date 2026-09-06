@@ -79,14 +79,19 @@ Android repositories use exact commits. Our small patch gives V8's final
 bindgen invocation Android target headers. It does not redirect the x64 host
 tools to Android headers. Pointer compression and the V8 sandbox remain enabled.
 
-The candidate contains `codex`, `codex-code-mode-host`, a network probe and the
-NDK C++ shared library. ELF checks reject Linux executables and unexpected
+The candidate contains `codex`, `codex-code-mode-host`, a network probe, the
+optional smoke script and the NDK C++ shared library. ELF checks reject Linux executables and unexpected
 shared-library dependencies. Relative library lookup avoids a launcher that
 rewrites process-wide proxy or dynamic-library environment variables. The
 development build strips symbols and disables release LTO to limit build cost.
 
-The build uploads only the compressed candidate and checksum, retained for
-three days. Sources and intermediate builds are not uploaded. `BUILD-INFO.json`
+The build uploads the compressed candidate and checksum, retained for three
+days. Its separate Actions cache keeps only this repository's compiled V8
+archive, matching Rust binding, GN configuration and checksum manifest. Cache
+keys match the exact build recipe and patch, with no fallback keys; hashes and
+required V8 flags are checked before reuse. Saving this pair before compiling
+Codex lets subsequent Rust fixes reuse it even if Codex compilation fails.
+Source trees and other build intermediates are not uploaded. `BUILD-INFO.json`
 records source revisions, V8 configuration, hashes and the unverified device
 status. A successful compile does not establish working phone behavior.
 

@@ -6,7 +6,9 @@ on:
     paths:
       - ".github/workflows/termux-build.yml"
       - "scripts/termux/**"
+      - "scripts/termux_smoke.py"
       - "patches/termux-rusty-v8-bindgen.patch"
+      - "codex-rs/**"
   workflow_dispatch:
 
 permissions:
@@ -45,11 +47,37 @@ jobs:
           python3 scripts/termux/build.py prepare
           --work-dir "${RUNNER_TEMP}/termux-native"
           --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
+      - name: Restore this repository's matching V8 pair
+        id: v8-cache
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: termux-v8-android-arm64-${{ hashFiles('scripts/termux/build.py', 'patches/termux-rusty-v8-bindgen.patch') }}
+          path: |
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/obj/librusty_v8.a
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/src_binding.rs
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/args.gn
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/v8-build.json
       - name: Build V8 with pointer compression and sandbox
+        if: steps.v8-cache.outputs.cache-hit != 'true'
         run: >-
           python3 scripts/termux/build.py v8
           --work-dir "${RUNNER_TEMP}/termux-native"
           --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
+      - name: Verify paired V8 outputs before reuse
+        run: >-
+          python3 scripts/termux/build.py verify-v8
+          --work-dir "${RUNNER_TEMP}/termux-native"
+          --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
+      - name: Retain only the reusable V8 pair and its checksums
+        if: steps.v8-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.v8-cache.outputs.cache-primary-key }}
+          path: |
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/obj/librusty_v8.a
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/src_binding.rs
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/args.gn
+            ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/v8-build.json
       - name: Build Codex and its code-mode host for Bionic
         run: >-
           python3 scripts/termux/build.py codex
