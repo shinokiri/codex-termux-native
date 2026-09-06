@@ -47,11 +47,18 @@ jobs:
           python3 scripts/termux/build.py prepare
           --work-dir "${RUNNER_TEMP}/termux-native"
           --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
+      - name: Select cache by V8 build inputs
+        id: v8-inputs
+        run: >-
+          python3 scripts/termux/build.py cache-key
+          --work-dir "${RUNNER_TEMP}/termux-native"
+          --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
+          >> "${GITHUB_OUTPUT}"
       - name: Restore this repository's matching V8 pair
         id: v8-cache
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: termux-v8-android-arm64-${{ hashFiles('scripts/termux/build.py', 'patches/termux-rusty-v8-bindgen.patch') }}
+          key: ${{ steps.v8-inputs.outputs.key }}
           path: |
             ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/obj/librusty_v8.a
             ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/src_binding.rs
@@ -61,11 +68,6 @@ jobs:
         if: steps.v8-cache.outputs.cache-hit != 'true'
         run: >-
           python3 scripts/termux/build.py v8
-          --work-dir "${RUNNER_TEMP}/termux-native"
-          --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
-      - name: Verify paired V8 outputs before reuse
-        run: >-
-          python3 scripts/termux/build.py verify-v8
           --work-dir "${RUNNER_TEMP}/termux-native"
           --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
       - name: Retain only the reusable V8 pair and its checksums

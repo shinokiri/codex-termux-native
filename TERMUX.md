@@ -96,8 +96,11 @@ development build strips symbols and disables release LTO to limit build cost.
 The build uploads the compressed candidate and checksum, retained for three
 days. Its separate Actions cache keeps only this repository's compiled V8
 archive, matching Rust binding, GN configuration and checksum manifest. Cache
-keys match the exact build recipe and patch, with no fallback keys; hashes and
-required V8 flags are checked before reuse. Saving this pair before compiling
+keys match V8, Rust and NDK versions, target/API, GN settings, the binding patch
+and a V8 build revision. Packaging-only edits do not invalidate this cache;
+changes to V8 build logic outside those inputs must bump `V8_BUILD_REVISION`.
+Required V8 flags are checked when V8 is built, and paired output hashes are
+checked once before Codex consumes them. Saving this pair before compiling
 Codex lets subsequent Rust fixes reuse it even if Codex compilation fails.
 Source trees and other build intermediates are not uploaded. `BUILD-INFO.json`
 records source revisions, V8 configuration, hashes and the unverified device

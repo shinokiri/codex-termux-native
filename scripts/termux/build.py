@@ -20,6 +20,10 @@ RUST = "1.95.0"
 NDK = "28.2.13676358"
 V8_VERSION = "150.4.0"
 V8_COMMIT = "5c15a6995c9bb4bacd3e341b59fff32c909c80bf"
+# Bump when changing V8 build logic not represented by v8_inputs().
+# Packaging-only edits should not cause another full V8 compilation.
+V8_BUILD_REVISION = 1
+V8_GN_ARGS = f"android_ndk_api_level={API} symbol_level=0"
 # These two git revisions are recorded in the matching upstream V8 DEPS.
 ANDROID_DEPS = {
     "android_platform": (
@@ -187,7 +191,7 @@ def build_v8(args):
             "CODEX_V8_NDK_TOOLCHAIN": str(args.toolchain),
             "CODEX_V8_ANDROID_API": API,
             "CODEX_V8_CLANG_RESOURCE_DIR": resource,
-            "GN_ARGS": f"android_ndk_api_level={API} symbol_level=0",
+            "GN_ARGS": V8_GN_ARGS,
         }
     )
     # Do not pass target-header overrides into V8's separate host-tool builds.
@@ -220,15 +224,22 @@ def build_v8(args):
     (gn / "v8-build.json").write_text(json.dumps(v8_fingerprint(gn), indent=2) + "\n")
 
 
-def v8_fingerprint(gn):
+def v8_inputs():
     return {
+        "build_revision": V8_BUILD_REVISION,
         "v8_commit": V8_COMMIT,
         "target": TARGET,
         "api": API,
         "ndk": NDK,
         "rust": RUST,
-        "recipe_sha256": digest(Path(__file__)),
+        "gn_args": V8_GN_ARGS,
         "patch_sha256": digest(ROOT / "patches/termux-rusty-v8-bindgen.patch"),
+    }
+
+
+def v8_fingerprint(gn):
+    return {
+        "inputs": v8_inputs(),
         "outputs": {
             name: digest(gn / name)
             for name in ("obj/librusty_v8.a", "src_binding.rs", "args.gn")
@@ -239,10 +250,7 @@ def v8_fingerprint(gn):
 def verify_v8(args):
     gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
     if json.loads((gn / "v8-build.json").read_text()) != v8_fingerprint(gn):
-        raise RuntimeError("V8 cache inputs or paired outputs differ from this recipe")
-    for flag in ("v8_enable_sandbox", "v8_enable_pointer_compression"):
-        if not re.search(rf"\b{flag}\s*=\s*true\b", (gn / "args.gn").read_text()):
-            raise RuntimeError(f"V8 is missing required flag: {flag}")
+        raise RuntimeError("V8 cache inputs or paired outputs differ from this build")
     print("Verified matching V8 archive, binding, configuration and source recipe.")
 
 
@@ -291,7 +299,6 @@ def digest(path):
 
 
 def package(args):
-    verify_v8(args)
     stage = args.work_dir / "package/codex-termux-native"
     (stage / "bin").mkdir(parents=True, exist_ok=True)
     (stage / "lib").mkdir(exist_ok=True)
@@ -333,6 +340,7 @@ def package(args):
         if (args.ndk / name).is_file():
             shutil.copy2(args.ndk / name, licenses / f"ndk-{name}.txt")
     gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
+    v8_outputs = json.loads((gn / "v8-build.json").read_text())["outputs"]
     provenance = {
         "codex_commit": output(["git", "rev-parse", "HEAD"]),
         "target": TARGET,
@@ -349,8 +357,8 @@ def package(args):
         "v8_binding_patch_sha256": digest(
             ROOT / "patches/termux-rusty-v8-bindgen.patch"
         ),
-        "v8_archive_sha256": digest(gn / "obj/librusty_v8.a"),
-        "v8_binding_sha256": digest(gn / "src_binding.rs"),
+        "v8_archive_sha256": v8_outputs["obj/librusty_v8.a"],
+        "v8_binding_sha256": v8_outputs["src_binding.rs"],
         "device_validated": False,
         "files": {
             str(p.relative_to(stage)): digest(p)
@@ -383,7 +391,7 @@ def package(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "stage", choices=["prepare", "v8", "verify-v8", "codex", "package"]
+        "stage", choices=["prepare", "v8", "cache-key", "codex", "package"]
     )
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--ndk", type=Path, required=True)
@@ -397,10 +405,15 @@ def main():
         parser.error(f"Use a positive job count and Android NDK {NDK}")
     args.source = args.work_dir / "rusty-v8"
     args.toolchain = args.ndk / "toolchains/llvm/prebuilt/linux-x86_64"
+    if args.stage == "cache-key":
+        key = hashlib.sha256(
+            json.dumps(v8_inputs(), sort_keys=True).encode()
+        ).hexdigest()
+        print(f"key=termux-v8-android-arm64-{key}")
+        return
     {
         "prepare": prepare,
         "v8": build_v8,
-        "verify-v8": verify_v8,
         "codex": build_codex,
         "package": package,
     }[args.stage](args)
