@@ -1,10 +1,58 @@
 use super::snapshot_script;
+use super::snapshot_state_and_environment_script;
 use crate::shell_detect::ShellType;
 use anyhow::Result;
-#[cfg(target_os = "macos")]
 use pretty_assertions::assert_eq;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use tempfile::tempdir;
+
+#[test]
+fn bash_snapshot_uses_path_env_instead_of_shell_function() -> Result<()> {
+    let dir = tempdir()?;
+    let bin = dir.path().join("prefix with spaces").join("bin");
+    fs::create_dir_all(&bin)?;
+    let env_program = bin.join("env");
+    fs::write(
+        &env_program,
+        "#!/bin/sh\n[ \"$1\" = -0 ] || exit 1\nprintf 'CODEX_SNAPSHOT_ENV_HELPER=path\\0MULTILINE_VALUE=%s\\0' \"$MULTILINE_VALUE\"\n",
+    )?;
+    fs::set_permissions(&env_program, fs::Permissions::from_mode(0o700))?;
+    let bash_env = dir.path().join("bash_env");
+    fs::write(&bash_env, "env() { printf 'SHADOWED_FUNCTION=yes\\0'; }\n")?;
+    let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+    let paths = std::iter::once(bin).chain(std::env::split_paths(&inherited_path));
+    let path = std::env::join_paths(paths)?;
+
+    let output = Command::new("/bin/bash")
+        .arg("-c")
+        .arg(
+            snapshot_state_and_environment_script(ShellType::Bash)
+                .expect("bash supports environment capture"),
+        )
+        .env_clear()
+        .env("PATH", path)
+        .env("BASH_ENV", bash_env)
+        .env("MULTILINE_VALUE", "one\ntwo")
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "snapshot capture failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout)?;
+    let (_, environment) = stdout
+        .split_once('\0')
+        .expect("snapshot should separate state from exported variables");
+    assert_eq!(
+        environment,
+        "CODEX_SNAPSHOT_ENV_HELPER=path\0MULTILINE_VALUE=one\ntwo\0"
+    );
+
+    Ok(())
+}
 
 #[test]
 fn bash_snapshot_filters_invalid_exports() -> Result<()> {

@@ -28,7 +28,8 @@ pub fn snapshot_script(shell_type: ShellType) -> Option<String> {
 pub fn snapshot_state_and_environment_script(shell_type: ShellType) -> Option<String> {
     let script = snapshot_script(shell_type)?;
     let (state, _) = script.split_once(EXPORT_CAPTURE_MARKER)?;
-    Some(format!("{state}printf '\\0'\n/usr/bin/env -0\n"))
+    // Resolve installations such as Termux through PATH, bypassing shell functions.
+    Some(format!("{state}printf '\\0'\ncommand env -0\n"))
 }
 
 fn excluded_exports_regex() -> String {
