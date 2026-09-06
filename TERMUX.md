@@ -46,6 +46,12 @@ tests and the complete `just fmt` command on code changes, including build recip
 edits. It installs the formatter tools on its own runner and does not wait for
 the Android source build. The worktree must remain unchanged after formatting.
 
+The native-check workflow also runs `build.py check-cli` with the pinned Android
+NDK and the candidate's release configuration. It checks the CLI and network
+probe independently of V8: only the separate code-mode host links that library.
+This catches Android compiler errors in the CLI's dependencies while V8 builds;
+final linking, code-mode host execution and device networking remain separate checks.
+
 ```sh
 just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command
 # Run in codex-rs:

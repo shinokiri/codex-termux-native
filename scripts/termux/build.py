@@ -261,19 +261,54 @@ def verify_v8(args):
     print("Verified matching V8 archive, binding, configuration and source recipe.")
 
 
-def build_codex(args):
-    verify_v8(args)
-    gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
+def codex_env(args):
     env = build_env(args)
     env.update(
         {
             "CARGO_TARGET_DIR": str(args.work_dir / "codex-target"),
-            "RUSTY_V8_ARCHIVE": str(gn / "obj/librusty_v8.a"),
-            "RUSTY_V8_SRC_BINDING_PATH": str(gn / "src_binding.rs"),
             "CARGO_PROFILE_RELEASE_DEBUG": "0",
             "CARGO_PROFILE_RELEASE_STRIP": "symbols",
             "CARGO_PROFILE_RELEASE_LTO": "false",
             "CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS": "-C link-arg=-Wl,-rpath,$ORIGIN/../lib -C link-arg=-Wl,-z,max-page-size=16384",
+        }
+    )
+    return env
+
+
+def check_cli(args):
+    # The CLI reaches code mode through a separate host process. Its Android
+    # compilation can be checked before the host's V8 library is available.
+    run(
+        [
+            "cargo",
+            f"+{RUST}",
+            "check",
+            "--locked",
+            "--release",
+            "--target",
+            TARGET,
+            "-p",
+            "codex-cli",
+            "-p",
+            "codex-http-client",
+            "--bin",
+            "codex",
+            "--example",
+            "termux_probe",
+        ],
+        cwd=ROOT / "codex-rs",
+        env=codex_env(args),
+    )
+
+
+def build_codex(args):
+    verify_v8(args)
+    gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
+    env = codex_env(args)
+    env.update(
+        {
+            "RUSTY_V8_ARCHIVE": str(gn / "obj/librusty_v8.a"),
+            "RUSTY_V8_SRC_BINDING_PATH": str(gn / "src_binding.rs"),
         }
     )
     run(
@@ -408,7 +443,7 @@ def package(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "stage", choices=["prepare", "v8", "cache-key", "codex", "package"]
+        "stage", choices=["prepare", "v8", "cache-key", "check-cli", "codex", "package"]
     )
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--ndk", type=Path, required=True)
@@ -431,6 +466,7 @@ def main():
     {
         "prepare": prepare,
         "v8": build_v8,
+        "check-cli": check_cli,
         "codex": build_codex,
         "package": package,
     }[args.stage](args)
