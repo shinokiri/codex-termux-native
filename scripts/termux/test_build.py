@@ -73,6 +73,37 @@ class PrepareTest(unittest.TestCase):
         self.assertEqual(source.read_text(), "different local headers\n")
 
 
+class CompilerBuiltinsTest(unittest.TestCase):
+    def test_codex_env_links_ndk_compiler_builtins(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            toolchain = root / "toolchain"
+            archive = toolchain / "lib/libclang_rt.builtins-aarch64-android.a"
+            archive.parent.mkdir(parents=True)
+            archive.write_bytes(b"compiler builtins")
+            args = SimpleNamespace(
+                work_dir=root / "work",
+                toolchain=toolchain,
+                ndk=root / "ndk",
+                jobs=4,
+            )
+
+            def tool_output(command, **_kwargs):
+                if command[-1] == "--print-libgcc-file-name":
+                    return str(archive)
+                if Path(command[0]).name == "llvm-nm":
+                    return "0000000000000000 T __clear_cache"
+                raise AssertionError(f"Unexpected tool command: {command}")
+
+            with patch.object(build, "output", side_effect=tool_output):
+                env = build.codex_env(args)
+
+            self.assertEqual(
+                env["CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS"].split()[-2:],
+                ["-C", f"link-arg={archive}"],
+            )
+
+
 class PackageTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

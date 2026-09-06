@@ -261,15 +261,33 @@ def verify_v8(args):
     print("Verified matching V8 archive, binding, configuration and source recipe.")
 
 
+def android_compiler_builtins(args):
+    compiler = args.toolchain / "bin" / f"{TARGET}{API}-clang"
+    archive = Path(output([compiler, "--print-libgcc-file-name"]))
+    if not archive.is_file():
+        raise RuntimeError(f"Android compiler builtins archive is missing: {archive}")
+    symbols = output(
+        [args.toolchain / "bin/llvm-nm", "--defined-only", archive]
+    ).split()
+    if "__clear_cache" not in symbols:
+        raise RuntimeError(f"Android compiler builtins lack __clear_cache: {archive}")
+    return archive
+
+
 def codex_env(args):
     env = build_env(args)
+    compiler_builtins = android_compiler_builtins(args)
     env.update(
         {
             "CARGO_TARGET_DIR": str(args.work_dir / "codex-target"),
             "CARGO_PROFILE_RELEASE_DEBUG": "0",
             "CARGO_PROFILE_RELEASE_STRIP": "symbols",
             "CARGO_PROFILE_RELEASE_LTO": "false",
-            "CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS": "-C link-arg=-Wl,-rpath,$ORIGIN/../lib -C link-arg=-Wl,-z,max-page-size=16384",
+            "CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS": (
+                "-C link-arg=-Wl,-rpath,$ORIGIN/../lib "
+                "-C link-arg=-Wl,-z,max-page-size=16384 "
+                f"-C link-arg={compiler_builtins}"
+            ),
         }
     )
     return env

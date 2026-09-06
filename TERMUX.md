@@ -22,7 +22,10 @@ TUI code generation but hit the same limit in `codex-exec`. Recursion limits
 apply per crate: Android's TUI and exec libraries and the final `codex` binary
 now use 256, matching the compiler's recommendation and the app-server crate.
 The successful independent Android build verifies those compiler-limit fixes.
-Code-mode host linking, full packaging and device execution remain separate gates.
+The corrected full build then reached the code-mode host's final link and exposed
+V8's required `__clear_cache` compiler builtin. The branch now links the
+NDK-selected compiler-rt builtins archive explicitly; verification of that fix,
+full packaging and device execution remain separate gates.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
@@ -30,7 +33,7 @@ Code-mode host linking, full packaging and device execution remain separate gate
 | OpenSSL | Android-only vendored build feature; Android CLI and network-probe linking passed | Device handshakes; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
-| V8 / code mode | Exact `v8 = 150.4.0` Android source compilation passed; Android binding-header patch | Full executable linking, V8 sandbox and code-mode execution on device |
+| V8 / code mode | Exact `v8 = 150.4.0` Android source compilation and paired cache verification passed; Android binding-header patch; NDK compiler builtins selected for the final link | Corrected executable linking, V8 sandbox and code-mode execution on device |
 | PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
 | Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshot v2 resolves `env` through `PATH`; stdio MCP children inherit Termux execution variables | Targeted shell tests passed; full Android build and subprocess execution pending |
 | Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
@@ -147,7 +150,12 @@ bindgen invocation Android target headers. It does not redirect the x64 host
 tools to Android headers. Pointer compression and the V8 sandbox remain enabled.
 
 The candidate contains `codex`, `codex-code-mode-host`, a network probe and the
-optional smoke script. The NDK C++ shared library is included only if an
+optional smoke script. Rust's Android link command uses `-nodefaultlibs`, while
+V8's ARM64 instruction-cache flush calls compiler-rt's `__clear_cache`. The
+build therefore asks the target NDK Clang driver for its compiler builtins
+archive, verifies that symbol is present, and links the archive statically. This
+uses the pinned NDK runtime and adds no device shared-library dependency.
+The NDK C++ shared library is included only if an
 executable's ELF dependencies require it. ELF checks reject Linux executables and unexpected
 shared-library dependencies. Relative library lookup avoids a launcher that
 rewrites process-wide proxy or dynamic-library environment variables. The
