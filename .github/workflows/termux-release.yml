@@ -1,6 +1,9 @@
 name: Termux release updates
 
 on:
+  push:
+    branches: ["termux/native"]
+    paths: [".github/workflows/termux-release.yml"]
   workflow_dispatch:
     inputs:
       revision:

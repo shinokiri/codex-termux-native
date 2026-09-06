@@ -1,0 +1,5 @@
+# This hosted image is already used successfully by our Android CI.
+# actionlint 1.7.12's built-in runner catalog does not list it yet.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

@@ -4,6 +4,8 @@ on:
   push:
     branches: ["termux/**"]
     paths-ignore:
+      - ".github/actionlint.yaml"
+      - ".github/workflows/termux-format.yml"
       - "TERMUX.md"
       - ".github/workflows/termux-build.yml"
       - ".github/workflows/termux-release.yml"

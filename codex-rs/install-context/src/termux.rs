@@ -12,7 +12,13 @@ pub fn version_from_release(tag: &str, assets: &[String]) -> Option<String> {
     let version = tag.strip_prefix("termux-v")?;
     let parsed = Version::parse(version).ok()?;
     if !parsed.pre.is_empty()
-        || parsed.build.as_str().strip_prefix("termux.")?.parse::<u64>().ok()? == 0
+        || parsed
+            .build
+            .as_str()
+            .strip_prefix("termux.")?
+            .parse::<u64>()
+            .ok()?
+            == 0
     {
         return None;
     }
@@ -46,7 +52,12 @@ fn version_key(value: &str) -> Option<(u64, u64, u64, u64)> {
     let revision = if version.build.is_empty() {
         0
     } else {
-        version.build.as_str().strip_prefix("termux.")?.parse().ok()?
+        version
+            .build
+            .as_str()
+            .strip_prefix("termux.")?
+            .parse()
+            .ok()?
     };
     Some((version.major, version.minor, version.patch, revision))
 }

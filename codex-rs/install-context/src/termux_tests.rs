@@ -3,8 +3,14 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn unpublished_package_does_not_offer_an_update() {
-    let mut assets = vec!["install.sh".to_owned(), "codex-package_SHA256SUMS".to_owned()];
-    assert_eq!(version_from_release("termux-v0.153.4+termux.1", &assets), None);
+    let mut assets = vec![
+        "install.sh".to_owned(),
+        "codex-package_SHA256SUMS".to_owned(),
+    ];
+    assert_eq!(
+        version_from_release("termux-v0.153.4+termux.1", &assets),
+        None
+    );
     assets.push("codex-package-aarch64-linux-android.tar.gz".to_owned());
     assert_eq!(
         version_from_release("termux-v0.153.4+termux.1", &assets),

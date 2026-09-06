@@ -157,7 +157,11 @@ async fn fetch_latest_github_release_version(
         .await?;
     #[cfg(target_os = "android")]
     {
-        let assets = release.assets.into_iter().map(|asset| asset.name).collect::<Vec<_>>();
+        let assets = release
+            .assets
+            .into_iter()
+            .map(|asset| asset.name)
+            .collect::<Vec<_>>();
         codex_install_context::termux::version_from_release(&release.tag_name, &assets)
             .ok_or_else(|| anyhow::anyhow!("Termux release is missing its completed package"))
     }
