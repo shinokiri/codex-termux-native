@@ -8,23 +8,26 @@ independently. No third-party Codex fork patches or release binaries are used.
 
 This is a development branch, not an installable or device-validated release.
 
-[Focused CI at `c58f4e8e`](https://github.com/shinokiri/codex-termux-native/actions/runs/34033146971)
+[Focused CI at `ea090a37`](https://github.com/shinokiri/codex-termux-native/actions/runs/34035460649)
 passed all 268 selected tests (plus one intentionally skipped subprocess
 fixture), four MCP credential fallback/deletion tests, Android lock/PTY/keyring
-API checks, the Android CLI and network-probe `cargo check`, targeted Clippy,
-formatting and the Bazel lock check.
+API checks, targeted Clippy, formatting and the Bazel lock check. The independent
+Android CLI and network-probe release build also compiled and linked successfully
+in 29 minutes 36 seconds. [CLI regression checks](https://github.com/shinokiri/codex-termux-native/actions/runs/34035460642)
+passed all 92 selected exec and CLI/TUI session-resume tests on Linux.
 The [first Android source build](https://github.com/shinokiri/codex-termux-native/actions/runs/34026086815)
 completed its V8 compilation step, then failed during TUI code generation at
 Rust's default recursion limit. The subsequent independent CLI build passed
 TUI code generation but hit the same limit in `codex-exec`. Recursion limits
 apply per crate: Android's TUI and exec libraries and the final `codex` binary
 now use 256, matching the compiler's recommendation and the app-server crate.
-The corrected full build and device execution remain separate gates.
+The successful independent Android build verifies those compiler-limit fixes.
+Code-mode host linking, full packaging and device execution remain separate gates.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
 | File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
-| OpenSSL | Android-only vendored build feature; CLI Android compilation passed | Final linking and device handshakes; this does not configure certificate roots |
+| OpenSSL | Android-only vendored build feature; Android CLI and network-probe linking passed | Device handshakes; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
 | V8 / code mode | Exact `v8 = 150.4.0` Android source compilation passed; Android binding-header patch | Full executable linking, V8 sandbox and code-mode execution on device |
