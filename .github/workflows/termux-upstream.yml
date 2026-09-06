@@ -1,0 +1,36 @@
+name: Termux upstream status
+
+on:
+  push:
+    branches: ["termux/native"]
+    paths:
+      - ".github/workflows/termux-upstream.yml"
+      - "scripts/termux/check_upstream.py"
+      - "scripts/termux/upstream.json"
+  workflow_dispatch:
+  # GitHub only runs schedules from the default branch. See TERMUX.md before
+  # enabling this on a fork whose default branch is still upstream's main.
+  schedule:
+    - cron: "3-58/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: termux-upstream-status
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: github.repository == 'shinokiri/codex-termux-native'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: termux/native
+          persist-credentials: false
+      - name: Compare the integrated source with official upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/termux/check_upstream.py

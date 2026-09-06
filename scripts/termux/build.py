@@ -13,6 +13,11 @@ import subprocess
 import tarfile
 import tomllib
 
+if __package__:
+    from .identity import build_identity
+else:
+    from identity import build_identity
+
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = "aarch64-linux-android"
 API = "29"
@@ -277,8 +282,16 @@ def android_compiler_builtins(args):
 def codex_env(args):
     env = build_env(args)
     compiler_builtins = android_compiler_builtins(args)
+    identity = build_identity(ROOT)
+    args.work_dir.mkdir(parents=True, exist_ok=True)
+    (args.work_dir / "codex-build.json").write_text(
+        json.dumps(identity, indent=2) + "\n"
+    )
     env.update(
         {
+            "STABLE_GIT_COMMIT": identity["codex_commit"]
+            + ("-dirty" if identity["source_dirty"] else ""),
+            "CODEX_TERMUX_VERSION": identity["cli_version"],
             "CARGO_TARGET_DIR": str(args.work_dir / "codex-target"),
             "CARGO_PROFILE_RELEASE_DEBUG": "0",
             "CARGO_PROFILE_RELEASE_STRIP": "symbols",
@@ -362,6 +375,7 @@ def digest(path):
 
 
 def package(args):
+    identity = json.loads((args.work_dir / "codex-build.json").read_text())
     stage = args.work_dir / "package/codex-termux-native"
     # This directory contains only staged copies, never compiler intermediates.
     # A retry must not archive an older manifest or obsolete package files.
@@ -411,8 +425,23 @@ def package(args):
             shutil.copy2(args.ndk / name, licenses / f"ndk-{name}.txt")
     gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
     v8_outputs = json.loads((gn / "v8-build.json").read_text())["outputs"]
+    # Use upstream's existing package metadata so the TUI can resolve releases.
+    # Source builds retain its commit-based identity rather than claiming a tag.
+    (stage / "codex-package.json").write_text(
+        json.dumps(
+            {
+                "layoutVersion": 1,
+                "version": identity["package_version"],
+                "target": TARGET,
+                "variant": "termux-native",
+                "entrypoint": "bin/codex",
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     provenance = {
-        "codex_commit": output(["git", "rev-parse", "HEAD"]),
+        **identity,
         "target": TARGET,
         "minimum_android_api": int(API),
         "ndk": NDK,

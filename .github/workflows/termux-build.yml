@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/termux-build.yml"
       - "scripts/termux/**"
+      - "!scripts/termux/check_upstream.py"
+      - "!scripts/termux/test_upstream.py"
       - "scripts/termux_smoke.py"
       - "patches/termux-rusty-v8-bindgen.patch"
       - "codex-rs/**"

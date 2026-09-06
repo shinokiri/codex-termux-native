@@ -4,6 +4,53 @@ This branch starts from official `openai/codex` commit
 `ac192cd7937b0d73edc6dffe009940ae53782dd4`. It implements Android adaptations
 independently. No third-party Codex fork patches or release binaries are used.
 
+## Version identity and upstream updates
+
+Official `main` uses `0.0.0` in its Cargo workspace; official release-tag source
+contains the release version. The first candidate inherited that placeholder
+because it was built from a main snapshot. It is not a reset of an official
+release version. In particular, this branch's initial upstream commit is not the
+same source as `rust-v0.153.4`, even though that is the latest stable release
+observed on 2026-09-06.
+
+New builds stamp `codex --version` as
+`main.<upstream-commit>+termux.g<fork-commit>` for this development snapshot.
+A future build based on versioned upstream source retains its version, for
+example `0.153.4+termux.g<fork-commit>`. Local modified checkouts add `.dirty`.
+Cargo manifests, lockfiles and protocol version selection are not rewritten.
+The existing upstream build-info mechanism receives the fork commit, and the
+package includes `codex-package.json`: the TUI shows a source commit for main
+snapshots and a release version for versioned packages. `BUILD-INFO.json`
+records both upstream and fork identities from the compile step. The previously
+uploaded `45d7ad58` candidate predates this stamping change.
+
+`scripts/termux/upstream.json` records the integrated official commit and the
+latest stable release reviewed. Update the commit only after integrating its
+source; `latest_release_seen` is a review checkpoint, not a claim that the release
+is incorporated. Check both official channels without compiling anything:
+
+```sh
+python3 scripts/termux/check_upstream.py
+```
+
+`Termux upstream status` runs this read-only comparison and writes an Actions
+summary. It includes a five-minute schedule offset from the top of the hour,
+but **the schedule is not active while this workflow exists only on
+`termux/native` and the fork's default branch remains `main`**. To enable it,
+either make `termux/native` the fork's default branch or place the workflow on
+the default branch. GitHub may delay scheduled runs. The checker reports state;
+it does not send change notifications, open update PRs, merge upstream or build
+packages.
+
+For following releases, prepare an update branch from `termux/native`, integrate
+the selected official source, resolve conflicts in the small Android adaptation
+set and update the checkpoint. Keep main snapshots visibly separate from stable
+release builds. Run the affected regression checks and actual Android source
+build before promoting a new candidate. Reuse the V8 cache when its inputs are
+unchanged; a changed locked V8 version requires reviewing the matching source pin
+and binding patch. Fully automatic PR preparation and promotion are not yet
+configured.
+
 ## Status
 
 This is a development candidate, not a device-validated release.

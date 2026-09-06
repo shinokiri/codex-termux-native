@@ -95,7 +95,18 @@ class CompilerBuiltinsTest(unittest.TestCase):
                     return "0000000000000000 T __clear_cache"
                 raise AssertionError(f"Unexpected tool command: {command}")
 
-            with patch.object(build, "output", side_effect=tool_output):
+            with (
+                patch.object(build, "output", side_effect=tool_output),
+                patch.object(
+                    build,
+                    "build_identity",
+                    return_value={
+                        "codex_commit": "codex-source-revision",
+                        "source_dirty": False,
+                        "cli_version": "main.upstream+termux.revision",
+                    },
+                ),
+            ):
                 env = build.codex_env(args)
 
             self.assertEqual(
@@ -117,6 +128,14 @@ class PackageTest(unittest.TestCase):
         )
         self.needs_libcxx = True
         for relative, content in {
+            "work/codex-build.json": json.dumps(
+                {
+                    "codex_commit": "compiled-source-revision",
+                    "source_dirty": False,
+                    "package_version": "0.153.4+termux.g0123456789ab",
+                    "cli_version": "0.153.4+termux.g0123456789ab",
+                }
+            ).encode(),
             "LICENSE": b"Codex license",
             "scripts/termux_smoke.py": b"smoke check",
             "patches/termux-rusty-v8-bindgen.patch": b"binding patch",
@@ -177,6 +196,10 @@ class PackageTest(unittest.TestCase):
             if path.is_file() and path.name != "BUILD-INFO.json"
         }
         self.assertEqual(manifest["files"], files)
+        # Repackaging must describe the compiled input, not the current checkout.
+        self.assertEqual(manifest["codex_commit"], "compiled-source-revision")
+        package_manifest = json.loads((self.stage / "codex-package.json").read_text())
+        self.assertEqual(package_manifest["version"], manifest["package_version"])
 
     def test_bundle_libcxx_only_when_an_executable_needs_it(self):
         for needed in (True, False):
