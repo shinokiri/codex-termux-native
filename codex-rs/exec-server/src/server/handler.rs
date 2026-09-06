@@ -6,7 +6,6 @@ use std::sync::atomic::Ordering;
 use codex_exec_server_protocol::JSONRPCErrorError;
 use codex_exec_server_protocol::RequestId;
 use codex_http_client::HttpClientFactory;
-use opentelemetry::trace::SpanContext;
 use serde_json::to_value;
 use std::collections::HashSet;
 use tokio::sync::Mutex;
@@ -70,10 +69,8 @@ use crate::rpc::invalid_request;
 use crate::server::file_system_handler::FileSystemHandler;
 use crate::server::session_registry::SessionHandle;
 use crate::server::session_registry::SessionRegistry;
-use crate::telemetry::ExecutorRegistration;
 
 pub(crate) struct ExecServerHandler {
-    pub(super) executor_registration: Option<Arc<ExecutorRegistration>>,
     session_registry: Arc<SessionRegistry>,
     notifications: RpcNotificationSender,
     session: StdMutex<Option<SessionHandle>>,
@@ -95,7 +92,6 @@ impl ExecServerHandler {
         http_client_factory: HttpClientFactory,
     ) -> Self {
         Self {
-            executor_registration: None,
             session_registry,
             notifications,
             session: StdMutex::new(None),
@@ -162,7 +158,7 @@ impl ExecServerHandler {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(session);
         Ok(InitializeResponse {
             session_id,
-            environment_info: Some(super::release_version::local_environment_info()),
+            environment_info: Some(EnvironmentInfo::local()),
         })
     }
 
@@ -176,28 +172,14 @@ impl ExecServerHandler {
         Ok(())
     }
 
-    pub(crate) async fn exec(
-        &self,
-        params: ExecParams,
-        launch_context: Option<SpanContext>,
-    ) -> Result<ExecResponse, JSONRPCErrorError> {
+    pub(crate) async fn exec(&self, params: ExecParams) -> Result<ExecResponse, JSONRPCErrorError> {
         let session = self.require_initialized_for("exec")?;
-        session
-            .process()
-            .exec(
-                params,
-                crate::process_telemetry::ProcessTelemetry {
-                    launch_context,
-                    executor_registration: self.executor_registration.clone(),
-                    ..Default::default()
-                },
-            )
-            .await
+        session.process().exec(params).await
     }
 
     pub(crate) fn environment_info(&self) -> Result<EnvironmentInfo, JSONRPCErrorError> {
         self.require_initialized_for("environment info")?;
-        Ok(super::release_version::local_environment_info())
+        Ok(EnvironmentInfo::local())
     }
 
     pub(crate) async fn environment_config_read(

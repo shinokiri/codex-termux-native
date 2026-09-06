@@ -3,7 +3,7 @@ use crate::error_code::invalid_request;
 use crate::notification_media::without_notification_media;
 use crate::outgoing_message::ClientRequestResult;
 use crate::outgoing_message::ThreadScopedOutgoingMessageSender;
-use crate::request_processors::apply_live_thread_settings;
+use crate::request_processors::apply_live_model_settings;
 use crate::request_processors::populate_thread_turns_from_history;
 use crate::request_processors::thread_from_stored_thread;
 use crate::request_processors::thread_settings_from_config_snapshot;
@@ -932,9 +932,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
             let request_cwd = match request.cwd {
                 Some(cwd) => cwd,
-                None => {
-                    LegacyAppPathString::from_abs_path(conversation.config_snapshot().await.cwd())
-                }
+                None => conversation.config_snapshot().await.cwd().clone(),
             };
             let params = PermissionsRequestApprovalParams {
                 thread_id: conversation_id.to_string(),
@@ -1287,7 +1285,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     }
                 };
 
-                apply_live_thread_settings(&mut response.thread, &config_snapshot);
+                apply_live_model_settings(&mut response.thread, &config_snapshot);
                 outgoing.send_response(request_id, response).await;
             }
         }
@@ -2297,7 +2295,6 @@ mod tests {
             })),
         ];
         let stored_thread = StoredThread {
-            originator: None,
             thread_id,
             extra_config: None,
             rollout_path: None,
@@ -2316,7 +2313,6 @@ mod tests {
             section_position: None,
             section_entered_at: None,
             project_id: None,
-            daybreak_enabled: None,
             cwd: test_path_buf("/tmp").abs().into(),
             cli_version: "0.0.0".to_string(),
             source: SessionSource::Cli,
@@ -2476,7 +2472,7 @@ mod tests {
         let action = codex_protocol::protocol::GuardianAssessmentAction::Command {
             source: codex_protocol::protocol::GuardianCommandSource::Shell,
             command: "rm -rf /tmp/example.sqlite".to_string(),
-            cwd: test_path_buf("/tmp").abs().into(),
+            cwd: test_path_buf("/tmp").abs(),
         };
         let notification = guardian_auto_approval_review_notification(
             &conversation_id,
@@ -2524,7 +2520,7 @@ mod tests {
         let action = codex_protocol::protocol::GuardianAssessmentAction::Command {
             source: codex_protocol::protocol::GuardianCommandSource::Shell,
             command: "rm -rf /tmp/example.sqlite".to_string(),
-            cwd: test_path_buf("/tmp").abs().into(),
+            cwd: test_path_buf("/tmp").abs(),
         };
         let notification = guardian_auto_approval_review_notification(
             &conversation_id,
@@ -3847,7 +3843,6 @@ mod tests {
         let rate_limits = RateLimitSnapshot {
             limit_id: Some("codex".to_string()),
             limit_name: None,
-            normal_model_slug: None,
             primary: Some(RateLimitWindow {
                 used_percent: 42.5,
                 window_minutes: Some(15),

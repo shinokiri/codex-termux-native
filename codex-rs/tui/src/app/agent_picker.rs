@@ -37,7 +37,6 @@ impl App {
                         .request_typed::<ThreadListResponse>(ClientRequest::ThreadList {
                             request_id: RequestId::String(Uuid::new_v4().to_string()),
                             params: ThreadListParams {
-                                originators: None,
                                 cursor,
                                 limit: Some(AGENT_PICKER_PAGE_SIZE),
                                 sort_key: None,

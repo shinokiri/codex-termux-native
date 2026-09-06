@@ -99,34 +99,27 @@ pub fn sandbox_setup_is_complete(_codex_home: &Path) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-pub fn prepare_elevated_sandbox(
+pub fn run_elevated_setup(
     permission_profile: &PermissionProfile,
     workspace_roots: &[AbsolutePathBuf],
     command_cwd: &Path,
     env_map: &HashMap<String, String>,
     codex_home: &Path,
 ) -> anyhow::Result<()> {
-    if !sandbox_setup_is_complete(codex_home) {
-        let permissions =
-            codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
-                permission_profile,
-                workspace_roots,
-            )?;
-        codex_windows_sandbox::run_elevated_setup(codex_windows_sandbox::SandboxSetupRequest {
+    let permissions =
+        codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+            permission_profile,
+            workspace_roots,
+        )?;
+    codex_windows_sandbox::run_elevated_setup(
+        codex_windows_sandbox::SandboxSetupRequest {
             permissions: &permissions,
             command_cwd,
             env_map,
             codex_home,
             proxy_enforced: false,
-        })?;
-    }
-    codex_windows_sandbox::run_setup_refresh(
-        permission_profile,
-        workspace_roots,
-        command_cwd,
-        env_map,
-        codex_home,
-        /*proxy_enforced*/ false,
+        },
+        codex_windows_sandbox::SetupRootOverrides::default(),
     )
 }
 
@@ -157,7 +150,7 @@ pub fn run_elevated_provisioning_setup(
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn prepare_elevated_sandbox(
+pub fn run_elevated_setup(
     _permission_profile: &PermissionProfile,
     _workspace_roots: &[AbsolutePathBuf],
     _command_cwd: &Path,
@@ -268,7 +261,12 @@ pub async fn run_windows_sandbox_setup(request: WindowsSandboxSetupRequest) -> a
             Ok(())
         }
         Err(err) => {
-            emit_windows_sandbox_setup_failure_metrics(mode, start.elapsed(), &err);
+            emit_windows_sandbox_setup_failure_metrics(
+                mode,
+                originator_tag.as_str(),
+                start.elapsed(),
+                &err,
+            );
             Err(err)
         }
     }
@@ -288,13 +286,15 @@ async fn run_windows_sandbox_setup_and_persist(
     let setup_result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         match mode {
             WindowsSandboxSetupMode::Elevated => {
-                prepare_elevated_sandbox(
-                    &permission_profile,
-                    workspace_roots.as_slice(),
-                    command_cwd.as_path(),
-                    &env_map,
-                    setup_codex_home.as_path(),
-                )?;
+                if !sandbox_setup_is_complete(setup_codex_home.as_path()) {
+                    run_elevated_setup(
+                        &permission_profile,
+                        workspace_roots.as_slice(),
+                        command_cwd.as_path(),
+                        &env_map,
+                        setup_codex_home.as_path(),
+                    )?;
+                }
             }
             WindowsSandboxSetupMode::Unelevated => {
                 run_legacy_setup_preflight(
@@ -346,17 +346,15 @@ fn emit_windows_sandbox_setup_success_metrics(
     );
 }
 
-/// Records setup failures, including service attempts that fail before the helper path.
-pub fn emit_windows_sandbox_setup_failure_metrics(
+fn emit_windows_sandbox_setup_failure_metrics(
     mode: WindowsSandboxSetupMode,
+    originator_tag: &str,
     duration: std::time::Duration,
     _err: &anyhow::Error,
 ) {
     let Some(metrics) = codex_otel::global() else {
         return;
     };
-    let originator_tag = sanitize_metric_tag_value(originator().value.as_str());
-    let originator_tag = originator_tag.as_str();
     let mode_tag = windows_sandbox_setup_mode_tag(mode);
     let _ = metrics.record_duration(
         "codex.windows_sandbox.setup_duration_ms",

@@ -122,7 +122,6 @@ impl OnboardingScreen {
             app_server_request_handle,
             config,
         } = args;
-        let local_settings = crate::local_settings::LocalSettings::from(&config);
         let cwd = config.cwd.to_path_buf();
         let remote_trust_key = remote_project_trust
             .as_ref()
@@ -132,7 +131,7 @@ impl OnboardingScreen {
         steps.push(Step::Welcome(WelcomeWidget::new(
             !matches!(login_status, LoginStatus::NotAuthenticated),
             tui.frame_requester(),
-            local_settings.tui.animations,
+            config.animations,
         )));
         if show_login_screen {
             let highlighted_mode =
@@ -151,7 +150,7 @@ impl OnboardingScreen {
                     app_server_request_handle,
                     auth_config,
                     bedrock_setup_enabled,
-                    animations_enabled: local_settings.tui.animations,
+                    animations_enabled: config.animations,
                     animations_suppressed: std::cell::Cell::new(false),
                 }));
             } else {

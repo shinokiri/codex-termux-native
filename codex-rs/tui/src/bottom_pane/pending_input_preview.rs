@@ -26,14 +26,9 @@ pub(crate) struct PendingInputPreview {
     pub queued_messages: Vec<String>,
     /// Key combination rendered in the hint line.  Defaults to Alt+Up but may
     /// be overridden for terminals where that chord is unavailable.
-    pub(super) edit_binding: Option<key_hint::ShortcutHint>,
+    edit_binding: Option<key_hint::ShortcutHint>,
     /// Key combination rendered for immediately interrupting and sending steers.
     interrupt_binding: Option<key_hint::ShortcutHint>,
-}
-
-enum QuestionPresence {
-    Absent,
-    Present,
 }
 
 const PREVIEW_LINE_LIMIT: usize = 3;
@@ -81,12 +76,10 @@ impl PendingInputPreview {
         ));
     }
 
-    fn as_renderable(&self, width: u16, questions: QuestionPresence) -> Box<dyn Renderable> {
-        let has_questions = matches!(questions, QuestionPresence::Present);
+    fn as_renderable(&self, width: u16) -> Box<dyn Renderable> {
         if (self.pending_steers.is_empty()
             && self.rejected_steers.is_empty()
-            && self.queued_messages.is_empty()
-            && !has_questions)
+            && self.queued_messages.is_empty())
             || width < 4
         {
             return Box::new(());
@@ -143,7 +136,7 @@ impl PendingInputPreview {
             }
         }
 
-        if !self.queued_messages.is_empty() || has_questions {
+        if !self.queued_messages.is_empty() {
             if !lines.is_empty() {
                 lines.push(Line::from(""));
             }
@@ -168,7 +161,6 @@ impl PendingInputPreview {
         }
 
         if !self.queued_messages.is_empty()
-            && !has_questions
             && let Some(edit_binding) = self.edit_binding
         {
             lines.push(
@@ -191,30 +183,11 @@ impl Renderable for PendingInputPreview {
             return;
         }
 
-        self.as_renderable(area.width, QuestionPresence::Absent)
-            .render(area, buf);
+        self.as_renderable(area.width).render(area, buf);
     }
 
     fn desired_height(&self, width: u16) -> u16 {
-        self.as_renderable(width, QuestionPresence::Absent)
-            .desired_height(width)
-    }
-}
-
-/// Pending questions keep the follow-up group visible and provide its navigation hint.
-pub(super) struct PendingInputPreviewContent<'a>(pub(super) &'a PendingInputPreview);
-
-impl Renderable for PendingInputPreviewContent<'_> {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
-        self.0
-            .as_renderable(area.width, QuestionPresence::Present)
-            .render(area, buf);
-    }
-
-    fn desired_height(&self, width: u16) -> u16 {
-        self.0
-            .as_renderable(width, QuestionPresence::Present)
-            .desired_height(width)
+        self.as_renderable(width).desired_height(width)
     }
 }
 

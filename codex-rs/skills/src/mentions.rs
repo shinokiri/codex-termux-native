@@ -64,11 +64,8 @@ pub fn app_id_from_path(path: &str) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-/// Desktop app/browser mentions append `?app=...` or `?browserFamily=...`.
-/// Ignore these targeting parameters when matching the plugin ID.
 pub fn plugin_config_name_from_path(path: &str) -> Option<&str> {
     path.strip_prefix(PLUGIN_PATH_PREFIX)
-        .and_then(|value| value.split('?').next())
         .filter(|value| !value.is_empty())
 }
 

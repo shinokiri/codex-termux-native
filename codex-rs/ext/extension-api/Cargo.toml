@@ -14,7 +14,6 @@ doctest = false
 workspace = true
 
 [dependencies]
-codex-history = { workspace = true }
 codex-config = { workspace = true }
 codex-context-fragments = { workspace = true }
 codex-exec-server-protocol = { workspace = true }

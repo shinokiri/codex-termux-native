@@ -874,7 +874,7 @@ impl TranscriptOverlay {
 
         let mut pairs: Vec<(Vec<ShortcutHint>, &str)> = vec![(
             first_or_empty(&self.view.keymap, "close", &self.view.keymap.close),
-            "close",
+            "to quit",
         )];
         if self.highlight_cell.is_some() {
             pairs.push((
@@ -994,7 +994,7 @@ impl StaticOverlay {
         render_navigation_hints(line1, buf, &self.view.keymap);
         let pairs: Vec<(Vec<ShortcutHint>, &str)> = vec![(
             first_or_empty(&self.view.keymap, "close", &self.view.keymap.close),
-            "close",
+            "to quit",
         )];
         render_key_hints(line2, buf, &pairs);
     }

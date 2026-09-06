@@ -1,6 +1,3 @@
-//! Signal-driven shutdown tests; Windows uses the detached daemon control request
-//! for SIGTERM-equivalent graceful and forced shutdown coverage.
-
 use super::connection_handling_websocket::DEFAULT_READ_TIMEOUT;
 use super::connection_handling_websocket::WsClient;
 use super::connection_handling_websocket::connect_websocket;
@@ -22,8 +19,6 @@ use codex_app_server_protocol::UserInput as V2UserInput;
 use core_test_support::responses;
 use futures::SinkExt;
 use futures::StreamExt;
-use pretty_assertions::assert_eq;
-#[cfg(unix)]
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 use tokio::process::Child;
@@ -36,7 +31,6 @@ use wiremock::Mock;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_ctrl_c_waits_for_running_turn_before_exit() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -62,7 +56,6 @@ async fn websocket_transport_ctrl_c_waits_for_running_turn_before_exit() -> Resu
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_second_ctrl_c_forces_exit_while_turn_running() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -98,7 +91,7 @@ async fn websocket_transport_sigterm_waits_for_running_turn_before_exit() -> Res
         mut ws,
     } = start_ctrl_c_restart_fixture(Duration::from_secs(3)).await?;
 
-    send_sigterm(&process, _codex_home.path())?;
+    send_sigterm(&process)?;
     assert_process_does_not_exit_within(&mut process, Duration::from_millis(300)).await?;
 
     let status = wait_for_process_exit_within(
@@ -123,10 +116,10 @@ async fn websocket_transport_second_sigterm_forces_exit_while_turn_running() -> 
         mut ws,
     } = start_ctrl_c_restart_fixture(Duration::from_secs(3)).await?;
 
-    send_sigterm(&process, _codex_home.path())?;
+    send_sigterm(&process)?;
     assert_process_does_not_exit_within(&mut process, Duration::from_millis(300)).await?;
 
-    send_sigterm(&process, _codex_home.path())?;
+    send_sigterm(&process)?;
     let status = wait_for_process_exit_within(
         &mut process,
         Duration::from_secs(2),
@@ -140,7 +133,6 @@ async fn websocket_transport_second_sigterm_forces_exit_while_turn_running() -> 
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_repeated_sighup_keeps_waiting_for_running_turn() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -265,22 +257,18 @@ async fn wait_for_responses_post(server: &wiremock::MockServer, wait_for: Durati
     }
 }
 
-#[cfg(unix)]
 fn send_sigint(process: &Child) -> Result<()> {
     send_signal(process, "-INT")
 }
 
-#[cfg(unix)]
-fn send_sigterm(process: &Child, _home: &std::path::Path) -> Result<()> {
+fn send_sigterm(process: &Child) -> Result<()> {
     send_signal(process, "-TERM")
 }
 
-#[cfg(unix)]
 fn send_sighup(process: &Child) -> Result<()> {
     send_signal(process, "-HUP")
 }
 
-#[cfg(unix)]
 fn send_signal(process: &Child, signal: &str) -> Result<()> {
     let pid = process
         .id()
@@ -336,13 +324,4 @@ async fn expect_websocket_disconnect(stream: &mut WsClient) -> Result<()> {
             Some(Err(_)) => return Ok(()),
         }
     }
-}
-
-#[cfg(windows)]
-fn send_sigterm(process: &Child, home: &std::path::Path) -> Result<()> {
-    std::fs::write(
-        home.join("daemon.shutdown"),
-        process.id().context("server pid")?.to_string(),
-    )?;
-    Ok(())
 }

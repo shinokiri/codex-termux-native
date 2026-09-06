@@ -1,5 +1,7 @@
 use super::effective_file_system_sandbox_policy;
+use super::intersect_permission_profiles;
 use super::intersect_permission_profiles_with_context;
+use super::materialize_additional_permissions;
 use super::materialize_additional_permissions_with_context;
 use super::merge_file_system_policy_with_additional_permissions;
 use super::normalize_additional_permissions;
@@ -21,27 +23,13 @@ use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 use dunce::canonicalize;
 use pretty_assertions::assert_eq;
+#[cfg(unix)]
 use std::path::Path;
 use tempfile::TempDir;
 
 #[cfg(unix)]
 fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(original, link)
-}
-
-fn intersect_permission_profiles_with_local_cwd(
-    requested: PermissionProfile,
-    granted: PermissionProfile,
-    cwd: &Path,
-) -> PermissionProfile {
-    let cwd = PathUri::from_host_native_path(cwd).expect("cwd URI");
-    let context = FileSystemSandboxPolicyContext {
-        cwd: &cwd,
-        workspace_roots: std::slice::from_ref(&cwd),
-        user_home_dir: None,
-        temporary_directories: None,
-    };
-    intersect_permission_profiles_with_context(requested, granted, &context)
 }
 
 #[test]
@@ -315,13 +303,6 @@ fn materialize_additional_permissions_preserves_authority_and_constraints() {
     )
     .expect("absolute temp dir");
     let home = PathUri::from_host_native_path("~").expect("host home");
-    let cwd_uri = PathUri::from(cwd.clone());
-    let context = FileSystemSandboxPolicyContext {
-        cwd: &cwd_uri,
-        workspace_roots: std::slice::from_ref(&cwd_uri),
-        user_home_dir: Some(&home),
-        temporary_directories: None,
-    };
     let project_path = |subpath: &str| FileSystemPath::Special {
         value: FileSystemSpecialPath::project_roots(Some(subpath.to_owned())),
     };
@@ -361,7 +342,7 @@ fn materialize_additional_permissions_preserves_authority_and_constraints() {
     ]);
 
     assert_eq!(
-        materialize_additional_permissions_with_context(requested, &context)
+        materialize_additional_permissions(requested, cwd.as_path())
             .expect("materialized permissions"),
         expected
     );
@@ -428,7 +409,7 @@ fn intersect_permission_profiles_preserves_explicit_empty_requested_reads() {
     let granted = requested.clone();
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested.clone(), granted, temp_dir.path()),
+        intersect_permission_profiles(requested.clone(), granted, temp_dir.path()),
         requested
     );
 }
@@ -449,11 +430,7 @@ fn intersect_permission_profiles_drops_ungranted_nonempty_path_requests() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
-            requested,
-            PermissionProfile::default(),
-            temp_dir.path()
-        ),
+        intersect_permission_profiles(requested, PermissionProfile::default(), temp_dir.path()),
         PermissionProfile::default()
     );
 }
@@ -474,11 +451,7 @@ fn intersect_permission_profiles_drops_explicit_empty_reads_without_grant() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
-            requested,
-            PermissionProfile::default(),
-            temp_dir.path()
-        ),
+        intersect_permission_profiles(requested, PermissionProfile::default(), temp_dir.path()),
         PermissionProfile::default()
     );
 }
@@ -518,7 +491,7 @@ fn intersect_permission_profiles_preserves_parent_relative_project_root_restrict
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted, cwd.as_path()),
+        intersect_permission_profiles(requested, granted, cwd.as_path()),
         PermissionProfile::default()
     );
 }
@@ -549,11 +522,11 @@ fn intersect_permission_profiles_rejects_symbolic_slash_tmp_grants() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted.clone(), cwd.path()),
+        intersect_permission_profiles(requested, granted.clone(), cwd.path()),
         PermissionProfile::default()
     );
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(granted.clone(), granted, cwd.path()),
+        intersect_permission_profiles(granted.clone(), granted, cwd.path()),
         PermissionProfile::default()
     );
 }
@@ -580,7 +553,7 @@ fn intersect_permission_profiles_preserves_deny_across_case_variant_grant() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
+        intersect_permission_profiles(
             profile(vec![requested_write, requested_deny.clone()]),
             profile(vec![granted_write.clone()]),
             requested_root.as_path(),
@@ -725,7 +698,7 @@ fn intersect_permission_profiles_preserves_opaque_child_deny() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
+        intersect_permission_profiles(
             profile(vec![requested_write, requested_deny.clone()]),
             profile(vec![granted_write.clone()]),
             root.as_path(),
@@ -764,7 +737,7 @@ fn intersect_permission_profiles_accepts_child_path_granted_for_requested_cwd() 
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted.clone(), cwd.as_path()),
+        intersect_permission_profiles(requested, granted.clone(), cwd.as_path()),
         granted
     );
 }
@@ -790,7 +763,7 @@ fn intersect_permission_profiles_materializes_cwd_grant_for_reuse() {
         ..Default::default()
     };
 
-    let intersected = intersect_permission_profiles_with_local_cwd(
+    let intersected = intersect_permission_profiles(
         cwd_write_permissions.clone(),
         cwd_write_permissions,
         request_cwd.as_path(),
@@ -807,7 +780,7 @@ fn intersect_permission_profiles_materializes_cwd_grant_for_reuse() {
         }
     );
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
+        intersect_permission_profiles(
             PermissionProfile {
                 file_system: Some(FileSystemPermissions::from_read_write_roots(
                     /*read*/ None,
@@ -849,11 +822,7 @@ fn intersect_permission_profiles_deduplicates_materialized_grants() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
-            permissions.clone(),
-            permissions,
-            cwd.as_path()
-        ),
+        intersect_permission_profiles(permissions.clone(), permissions, cwd.as_path()),
         PermissionProfile {
             file_system: Some(FileSystemPermissions::from_read_write_roots(
                 /*read*/ None,
@@ -893,11 +862,7 @@ fn intersect_permission_profiles_materializes_cwd_deny_entries() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
-            permissions.clone(),
-            permissions,
-            request_cwd.as_path()
-        ),
+        intersect_permission_profiles(permissions.clone(), permissions, request_cwd.as_path()),
         PermissionProfile {
             file_system: Some(FileSystemPermissions {
                 entries: vec![
@@ -959,7 +924,7 @@ fn intersect_permission_profiles_drops_deny_entries_without_filesystem_grants() 
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted.clone(), cwd.as_path()),
+        intersect_permission_profiles(requested, granted.clone(), cwd.as_path()),
         granted
     );
 }
@@ -1003,7 +968,7 @@ fn intersect_permission_profiles_rejects_concrete_grants_matched_by_requested_de
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted, cwd.as_path()),
+        intersect_permission_profiles(requested, granted, cwd.as_path()),
         PermissionProfile::default()
     );
 }
@@ -1037,11 +1002,8 @@ fn intersect_permission_profiles_materializes_relative_deny_globs_for_reuse() {
         ..Default::default()
     };
 
-    let intersected = intersect_permission_profiles_with_local_cwd(
-        permissions.clone(),
-        permissions,
-        request_cwd.as_path(),
-    );
+    let intersected =
+        intersect_permission_profiles(permissions.clone(), permissions, request_cwd.as_path());
 
     assert_eq!(
         intersected,
@@ -1067,7 +1029,7 @@ fn intersect_permission_profiles_materializes_relative_deny_globs_for_reuse() {
         }
     );
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(
+        intersect_permission_profiles(
             PermissionProfile {
                 file_system: Some(FileSystemPermissions::from_read_write_roots(
                     /*read*/ None,
@@ -1112,7 +1074,7 @@ fn intersect_permission_profiles_drops_broader_cwd_grant_for_requested_child_pat
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted, cwd.as_path()),
+        intersect_permission_profiles(requested, granted, cwd.as_path()),
         PermissionProfile::default()
     );
 }
@@ -1150,7 +1112,7 @@ fn intersect_permission_profiles_uses_granted_bounded_glob_scan_depth() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted, cwd.as_path()),
+        intersect_permission_profiles(requested, granted, cwd.as_path()),
         PermissionProfile {
             file_system: Some(FileSystemPermissions {
                 entries: vec![
@@ -1208,7 +1170,7 @@ fn intersect_permission_profiles_uses_granted_unbounded_glob_scan_depth() {
     };
 
     assert_eq!(
-        intersect_permission_profiles_with_local_cwd(requested, granted, cwd.as_path()),
+        intersect_permission_profiles(requested, granted, cwd.as_path()),
         PermissionProfile {
             file_system: Some(FileSystemPermissions {
                 entries: vec![
