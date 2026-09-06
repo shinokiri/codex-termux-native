@@ -37,7 +37,7 @@ jobs:
           sudo apt-get install -y libclang-21-dev clang-21 ninja-build pkg-config libssl-dev cmake
       - name: Check pinned Android toolchain and SDK
         run: |
-          sdkmanager "ndk;${TERMUX_NDK_VERSION}" "platforms;android-37.0" "build-tools;37.0.0"
+          "${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager" "ndk;${TERMUX_NDK_VERSION}" "platforms;android-37.0" "build-tools;37.0.0"
           test -x "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
           df -h "${RUNNER_TEMP}"
       - name: Check out pinned V8 sources and Android dependencies
