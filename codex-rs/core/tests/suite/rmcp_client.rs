@@ -3854,7 +3854,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
         .read(true)
         .write(true)
         .open(temp_home.path().join("mcp-oauth-locks/file-store.lock"))?;
-    store_lock.try_lock()?;
+    codex_utils_file_lock::try_lock(&store_lock)?;
     fixture
         .codex
         .start_or_steer_turn(read_only_user_turn(

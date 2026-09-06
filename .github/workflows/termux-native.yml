@@ -1,0 +1,87 @@
+name: Termux native checks
+
+on:
+  push:
+    branches: ["termux/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: termux-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  file-locks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          toolchain: 1.95.0
+          components: clippy,rustfmt
+          targets: aarch64-linux-android
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: just@1.51.0,nextest@0.9.143
+      - uses: facebook/install-dotslash@1e4e7b3e07eaca387acb98f1d4720e0bee8dbb6a # v2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.3"
+      - name: Verify workspace manifests
+        run: python3 .github/scripts/verify_cargo_workspace_manifests.py
+      - name: Test kernel lock semantics and process exit
+        run: just test --locked -p codex-utils-file-lock
+      - name: Check Android lock API compilation
+        working-directory: codex-rs
+        run: cargo check --locked -p codex-utils-file-lock --tests --target aarch64-linux-android
+      - name: Apply targeted Clippy fixes
+        run: just fix -p codex-utils-file-lock --locked
+      - name: Format repository
+        run: just fmt
+      - name: Check generated changes
+        run: |
+          git diff --binary > "${RUNNER_TEMP}/termux-format.patch"
+          git diff --exit-code
+      - name: Retain formatting corrections for review
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: termux-format-corrections
+          path: ${{ runner.temp }}/termux-format.patch
+          if-no-files-found: ignore
+          retention-days: 3
+
+  bazel-lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: just@1.51.0
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-version: 1.28.1
+      - name: Refresh Bazel dependency lock
+        run: just bazel-lock-update
+      - name: Check lockfile changes
+        run: |
+          git diff --binary -- MODULE.bazel.lock > "${RUNNER_TEMP}/termux-bazel-lock.patch"
+          git diff --exit-code -- MODULE.bazel.lock
+      - name: Retain lockfile corrections for review
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: termux-bazel-lock-corrections
+          path: ${{ runner.temp }}/termux-bazel-lock.patch
+          if-no-files-found: ignore
+          retention-days: 3

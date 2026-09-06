@@ -382,7 +382,7 @@ fn prepare_path_entry_for_codex_aliases(
         .create(true)
         .truncate(false)
         .open(&lock_path)?;
-    lock_file.try_lock()?;
+    codex_utils_file_lock::try_lock(&lock_file)?;
 
     for filename in &[
         APPLY_PATCH_ARG0,
@@ -523,7 +523,7 @@ fn try_lock_dir(dir: &Path) -> std::io::Result<Option<File>> {
         Err(err) => return Err(err),
     };
 
-    match lock_file.try_lock() {
+    match codex_utils_file_lock::try_lock(&lock_file) {
         Ok(()) => Ok(Some(lock_file)),
         Err(std::fs::TryLockError::WouldBlock) => Ok(None),
         Err(err) => Err(err.into()),
@@ -787,7 +787,7 @@ mod tests {
         let dir = root.path().join("locked");
         fs::create_dir(&dir)?;
         let lock_file = create_lock(&dir)?;
-        lock_file.try_lock()?;
+        codex_utils_file_lock::try_lock(&lock_file)?;
 
         janitor_cleanup(root.path())?;
 

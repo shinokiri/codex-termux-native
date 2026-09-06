@@ -2378,6 +2378,7 @@ dependencies = [
  "codex-state",
  "codex-uds",
  "codex-utils-absolute-path",
+ "codex-utils-file-lock",
  "codex-utils-rustls-provider",
  "constant_time_eq",
  "futures",
@@ -2434,6 +2435,7 @@ dependencies = [
  "codex-sandboxing",
  "codex-shell-escalation",
  "codex-utils-absolute-path",
+ "codex-utils-file-lock",
  "codex-utils-home-dir",
  "codex-windows-sandbox",
  "dotenvy",
@@ -3004,6 +3006,7 @@ dependencies = [
  "codex-utils-audio",
  "codex-utils-cache",
  "codex-utils-cargo-bin",
+ "codex-utils-file-lock",
  "codex-utils-git-discovery",
  "codex-utils-home-dir",
  "codex-utils-image",
@@ -3301,6 +3304,7 @@ dependencies = [
  "anyhow",
  "clap",
  "codex-utils-absolute-path",
+ "codex-utils-file-lock",
  "multimap",
  "pretty_assertions",
  "serde",
@@ -3940,6 +3944,7 @@ name = "codex-message-history"
 version = "0.0.0"
 dependencies = [
  "codex-config",
+ "codex-utils-file-lock",
  "memchr",
  "pretty_assertions",
  "serde",
@@ -4030,6 +4035,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-utils-absolute-path",
+ "codex-utils-file-lock",
  "codex-utils-home-dir",
  "codex-utils-rustls-provider",
  "codex-windows-sandbox",
@@ -4287,6 +4293,7 @@ dependencies = [
  "codex-protocol",
  "codex-secrets",
  "codex-utils-cargo-bin",
+ "codex-utils-file-lock",
  "codex-utils-home-dir",
  "codex-utils-path-uri",
  "codex-utils-pty",
@@ -4330,6 +4337,7 @@ dependencies = [
  "codex-protocol",
  "codex-state",
  "codex-utils-absolute-path",
+ "codex-utils-file-lock",
  "codex-utils-path",
  "pretty_assertions",
  "regex",
@@ -4580,6 +4588,7 @@ dependencies = [
  "codex-rollout",
  "codex-state",
  "codex-utils-absolute-path",
+ "codex-utils-file-lock",
  "codex-utils-path",
  "codex-utils-path-uri",
  "futures",
@@ -4819,6 +4828,15 @@ dependencies = [
 [[package]]
 name = "codex-utils-elapsed"
 version = "0.0.0"
+
+[[package]]
+name = "codex-utils-file-lock"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "pretty_assertions",
+ "tempfile",
+]
 
 [[package]]
 name = "codex-utils-fuzzy-match"

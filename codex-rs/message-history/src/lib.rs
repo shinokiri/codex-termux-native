@@ -88,7 +88,7 @@ fn history_filepath(config: &HistoryConfig) -> PathBuf {
 
 /// Append a `text` entry associated with `conversation_id` to the history file.
 ///
-/// Uses advisory file locking (`File::try_lock`) with a retry loop to ensure
+/// Uses advisory file locking (`codex_utils_file_lock::try_lock`) with a retry loop to ensure
 /// concurrent writes from multiple TUI processes do not interleave. The lock
 /// acquisition and write are performed inside `spawn_blocking` so the caller's
 /// async runtime is not blocked.
@@ -160,7 +160,7 @@ pub async fn append_entry(
     tokio::task::spawn_blocking(move || -> Result<()> {
         // Retry a few times to avoid indefinite blocking when contended.
         for _ in 0..MAX_RETRIES {
-            match history_file.try_lock() {
+            match codex_utils_file_lock::try_lock(&history_file) {
                 Ok(()) => {
                     // While holding the exclusive lock, write the full line.
                     // We do not open the file with `append(true)` on Windows, so ensure the
@@ -295,7 +295,7 @@ pub async fn history_metadata(config: &HistoryConfig) -> (u64, usize) {
 /// parse failure, all of which are logged at `warn` level.
 ///
 /// This function is synchronous because it acquires a shared advisory file lock
-/// via `File::try_lock_shared`. Callers on an async runtime should wrap it in
+/// via `codex_utils_file_lock::try_lock_shared`. Callers on an async runtime should wrap it in
 /// `spawn_blocking`.
 pub fn lookup(log_id: u64, offset: usize, config: &HistoryConfig) -> Option<HistoryEntry> {
     let path = history_filepath(config);
@@ -382,7 +382,7 @@ fn lookup_history_entry(path: &Path, log_id: u64, offset: usize) -> Option<Histo
     // Open & lock file for reading using a shared lock.
     // Retry a few times to avoid indefinite blocking.
     for _ in 0..MAX_RETRIES {
-        let lock_result = file.try_lock_shared();
+        let lock_result = codex_utils_file_lock::try_lock_shared(&file);
 
         match lock_result {
             Ok(()) => {

@@ -1,0 +1,22 @@
+[package]
+name = "codex-utils-file-lock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+
+# Exercise the Android syscall implementation on Linux as well as on a device.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+libc = { workspace = true }

@@ -61,7 +61,7 @@ impl WriterLockCoordinator {
                 ),
             })?;
 
-        match file.try_lock() {
+        match codex_utils_file_lock::try_lock(&file) {
             Ok(()) => {}
             Err(std::fs::TryLockError::WouldBlock) => {
                 return Err(ThreadStoreError::Conflict {
@@ -106,7 +106,7 @@ impl WriterLockCoordinator {
                     path.display()
                 ),
             })?;
-        file.lock().map_err(|err| ThreadStoreError::Internal {
+        codex_utils_file_lock::lock(&file).map_err(|err| ThreadStoreError::Internal {
             message: format!(
                 "failed to acquire thread writer coordination lock {}: {err}",
                 path.display()
@@ -140,7 +140,7 @@ impl WriterLockCoordinator {
                     continue;
                 }
             };
-            match file.try_lock() {
+            match codex_utils_file_lock::try_lock(&file) {
                 Ok(()) => {
                     drop(file);
                     if let Err(err) = fs::remove_file(&path)
