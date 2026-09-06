@@ -45,7 +45,9 @@ jobs:
       - name: Diagnose TLS feature selection after a test failure
         if: steps.tests.outcome == 'failure'
         working-directory: codex-rs
-        run: cargo tree --locked -p codex-http-client -e features -i reqwest@0.12.28
+        run: |
+          cargo tree --locked -p codex-http-client -e features -i reqwest@0.12.28
+          python3 -c 'import os; from pathlib import Path; p = next((Path(os.environ["CARGO_HOME"]) / "registry/src").glob("*/reqwest-0.12.28/src/tls.rs")); s = p.read_text(); i = s.index("impl Default for TlsBackend"); print(s[i:i+650])'
       - name: Compare failing TLS scenarios against the official baseline
         if: steps.tests.outcome == 'failure'
         continue-on-error: true
