@@ -60,7 +60,10 @@ fn exclusive_lock_blocks_separate_readers_and_writers() -> TestResult {
             "{api:?}"
         );
         assert!(
-            matches!((api.try_lock_shared)(&contender), Err(TryLockError::WouldBlock)),
+            matches!(
+                (api.try_lock_shared)(&contender),
+                Err(TryLockError::WouldBlock)
+            ),
             "{api:?}"
         );
         (api.unlock)(file.as_file())?;

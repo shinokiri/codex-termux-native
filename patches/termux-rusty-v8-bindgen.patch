@@ -1,0 +1,32 @@
+diff --git a/build.rs b/build.rs
+--- a/build.rs
++++ b/build.rs
+@@ -248,11 +248,28 @@ fn build_binding() {
+     clang_args.push(format!("--target={clang_target}"));
+   }
+
++  // Scope Android headers to this binding invocation. Exporting bindgen's
++  // global extra arguments would also redirect V8's x64 host-tool bindings.
++  let mut android_args = Vec::new();
++  if target_os == "android" {
++    let ndk = PathBuf::from(env::var("CODEX_V8_NDK_TOOLCHAIN").unwrap());
++    let sysroot = ndk.join("sysroot");
++    let resource = env::var("CODEX_V8_CLANG_RESOURCE_DIR").unwrap();
++    let target = env::var("TARGET").unwrap();
++    let api = env::var("CODEX_V8_ANDROID_API").unwrap();
++    android_args.push(format!("--target={target}{api}"));
++    android_args.push(format!("--sysroot={}", sysroot.display()));
++    android_args.push(format!("-isystem{}/usr/include", sysroot.display()));
++    android_args.push(format!("-isystem{}/usr/include/{target}", sysroot.display()));
++    android_args.push(format!("-isystem{resource}/include"));
++  }
++
+   let bindings = bindgen::Builder::default()
+     .header("src/binding.hpp")
+     .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+     .clang_args(clang_args)
+     .clang_args(filtered_args)
++    .clang_args(android_args)
+     .generate_cstr(true)
+     .rustified_enum(".*UseCounterFeature")
+     .rustified_enum(".*ModuleImportPhase")

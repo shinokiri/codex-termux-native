@@ -36,13 +36,16 @@ jobs:
           version: "0.11.3"
       - name: Verify workspace manifests
         run: python3 .github/scripts/verify_cargo_workspace_manifests.py
-      - name: Test kernel lock semantics and process exit
-        run: just test --locked -p codex-utils-file-lock
+      - name: Test kernel locks and existing HTTP certificate policy
+        run: just test --locked -p codex-utils-file-lock -p codex-http-client
+      - name: Check the device network probe
+        working-directory: codex-rs
+        run: cargo check --locked -p codex-http-client --example termux_probe
       - name: Check Android lock API compilation
         working-directory: codex-rs
         run: cargo check --locked -p codex-utils-file-lock --tests --target aarch64-linux-android
       - name: Apply targeted Clippy fixes
-        run: just fix -p codex-utils-file-lock --locked
+        run: just fix -p codex-utils-file-lock -p codex-http-client --locked --examples
       - name: Format repository
         run: just fmt
       - name: Check generated changes

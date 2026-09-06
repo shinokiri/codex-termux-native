@@ -10,12 +10,12 @@ This is a development branch, not an installable or device-validated release.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
-| File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Rust tests, Android compilation and device filesystem tests |
+| File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
 | OpenSSL | Android-only vendored build feature | Full cross compilation; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
-| TLS certificates | Official CA policy retained pending dependency audit | HTTPS and WSS default roots, custom roots, invalid-root rejection |
-| V8 / code mode | Official dependency remains exactly `v8 = 150.4.0` | Build matching upstream sources for Android with sandbox enabled |
-| PTY and child tools | Official implementation retained pending ABI checks | Interactive shell, resize, interrupt, MCP subprocess environment |
+| TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle | Device HTTPS and WSS roots; custom-root rejection tests in CI |
+| V8 / code mode | Exact `v8 = 150.4.0` source build workflow, Android binding-header patch | Successful source build, native sandbox and code-mode execution |
+| PTY and child tools | Android provides `openpty` since API 23; no replacement added | Link verification, interactive shell, resize, interrupt, MCP subprocess environment |
 
 The new file-lock crate preserves contention and real I/O errors. Unsupported
 filesystems do not silently receive permission to enter critical sections.
@@ -55,3 +55,33 @@ still present; source and runtime evidence take precedence over those claims.
 Model-instruction fallbacks, custom update servers, ignored locking failures and
 stubbed operations are not prerequisites for an Android port. Each adaptation
 must have an identified upstream limitation and retain real error reporting.
+
+## Android candidate build
+
+`Termux Android source build` uses Ubuntu 26.04, Rust 1.95.0, NDK
+28.2.13676358 and Android API 29 (Android 10 or newer, ARM64). The SDK inputs
+match the pinned Chromium build files: platform 37.0 and build-tools 37.0.0.
+This SDK choice does not raise the runtime API floor to 37.
+
+V8 starts at upstream `denoland/rusty_v8` commit
+`5c15a6995c9bb4bacd3e341b59fff32c909c80bf`; git submodules and the additional
+Android repositories use exact commits. Our small patch gives V8's final
+bindgen invocation Android target headers. It does not redirect the x64 host
+tools to Android headers. Pointer compression and the V8 sandbox remain enabled.
+
+The candidate contains `codex`, `codex-code-mode-host`, a network probe and the
+NDK C++ shared library. ELF checks reject Linux executables and unexpected
+shared-library dependencies. Relative library lookup avoids a launcher that
+rewrites process-wide proxy or dynamic-library environment variables. The
+development build strips symbols and disables release LTO to limit build cost.
+
+The build uploads only the compressed candidate and checksum, retained for
+three days. Sources and intermediate builds are not uploaded. `BUILD-INFO.json`
+records source revisions, V8 configuration, hashes and the unverified device
+status. A successful compile does not establish working phone behavior.
+
+The bundled `termux_probe` checks system DNS, HTTPS, and the TLS configuration
+used for WebSocket clients without an explicit HTTP proxy. It uses no account
+credentials. A full WebSocket upgrade, login, sessions, code mode and subprocess
+execution still require separate device checks. Normal CA verification stays
+enabled; the port does not hard-code a DNS service or disable TLS verification.
