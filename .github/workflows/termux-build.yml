@@ -29,6 +29,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - name: Check source preparation retries and package contents
+        run: python3 -m unittest discover -s scripts/termux -p 'test_*.py' -v
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
           toolchain: 1.95.0

@@ -119,8 +119,14 @@ def prepare(args):
     if "android_ndk_version" not in content:
         gclient.write_text(content + '\nandroid_ndk_version = "r28"\n')
     patch = ROOT / "patches/termux-rusty-v8-bindgen.patch"
-    run(["git", "apply", "--check", patch], cwd=args.source)
-    run(["git", "apply", patch], cwd=args.source)
+    applied = subprocess.run(
+        ["git", "apply", "--reverse", "--check", str(patch)],
+        cwd=args.source,
+        capture_output=True,
+    )
+    if applied.returncode != 0:
+        run(["git", "apply", "--check", patch], cwd=args.source)
+        run(["git", "apply", patch], cwd=args.source)
     run(
         ["python3", "build/linux/sysroot_scripts/install-sysroot.py", "--arch=amd64"],
         cwd=args.source,
@@ -202,6 +208,7 @@ def build_v8(args):
             "cargo",
             f"+{RUST}",
             "build",
+            "-vv",  # Stream Ninja progress from Cargo's build script.
             "--locked",
             "--release",
             "--target",
@@ -284,7 +291,10 @@ def build_codex(args):
             "codex-code-mode-host",
             "-p",
             "codex-http-client",
-            "--bins",
+            "--bin",
+            "codex",
+            "--bin",
+            "codex-code-mode-host",
             "--example",
             "termux_probe",
         ],
@@ -300,10 +310,15 @@ def digest(path):
 
 def package(args):
     stage = args.work_dir / "package/codex-termux-native"
+    # This directory contains only staged copies, never compiler intermediates.
+    # A retry must not archive an older manifest or obsolete package files.
+    if stage.exists():
+        shutil.rmtree(stage)
     (stage / "bin").mkdir(parents=True, exist_ok=True)
     (stage / "lib").mkdir(exist_ok=True)
     release = args.work_dir / "codex-target" / TARGET / "release"
     readelf = args.toolchain / "bin/llvm-readelf"
+    needed_libraries = set()
     for name in ("codex", "codex-code-mode-host", "examples/termux_probe"):
         binary = release / name
         description = output(
@@ -325,11 +340,13 @@ def package(args):
         }
         if set(needed) - supported:
             raise RuntimeError(f"Unpackaged native dependency in {binary}: {needed}")
+        needed_libraries.update(needed)
         shutil.copy2(binary, stage / "bin" / binary.name)
-    shutil.copy2(
-        args.toolchain / "sysroot/usr/lib/aarch64-linux-android/libc++_shared.so",
-        stage / "lib/libc++_shared.so",
-    )
+    if "libc++_shared.so" in needed_libraries:
+        shutil.copy2(
+            args.toolchain / "sysroot/usr/lib/aarch64-linux-android/libc++_shared.so",
+            stage / "lib/libc++_shared.so",
+        )
     shutil.copy2(ROOT / "scripts/termux_smoke.py", stage / "smoke.py")
     licenses = stage / "licenses"
     licenses.mkdir(exist_ok=True)

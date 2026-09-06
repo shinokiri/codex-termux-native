@@ -49,7 +49,14 @@ cargo check --locked -p codex-utils-file-lock -p codex-utils-pty --tests --targe
 just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command --locked --examples
 just fmt
 just bazel-lock-update
+# Build-script regressions (Python 3.11+, no V8 compilation or NDK required):
+python3 -m unittest discover -s scripts/termux -p 'test_*.py' -v
 ```
+
+Build-script tests cover repeated preparation with an already-applied patch,
+real patch conflicts, clean and reproducible repackaging, and inclusion of the
+C++ shared library only when a packaged executable needs it. The Android build
+workflow runs these checks before installing tools or compiling sources.
 
 The HTTP tests include both successful custom-CA handshakes and rejection of
 malformed or empty CA files. A real certificate-error test exposed a nested
@@ -87,11 +94,16 @@ Android repositories use exact commits. Our small patch gives V8's final
 bindgen invocation Android target headers. It does not redirect the x64 host
 tools to Android headers. Pointer compression and the V8 sandbox remain enabled.
 
-The candidate contains `codex`, `codex-code-mode-host`, a network probe, the
-optional smoke script and the NDK C++ shared library. ELF checks reject Linux executables and unexpected
+The candidate contains `codex`, `codex-code-mode-host`, a network probe and the
+optional smoke script. The NDK C++ shared library is included only if an
+executable's ELF dependencies require it. ELF checks reject Linux executables and unexpected
 shared-library dependencies. Relative library lookup avoids a launcher that
 rewrites process-wide proxy or dynamic-library environment variables. The
 development build strips symbols and disables release LTO to limit build cost.
+Only the two delivered binaries and the probe are selected for compilation;
+unrelated CLI binaries such as `logs_client` are not built. V8 builds use Cargo's
+verbose mode to expose Ninja progress. Preparation can be rerun with the same
+patch, and repackaging replaces staged copies without deleting compiler outputs.
 
 The build uploads the compressed candidate and checksum, retained for three
 days. Its separate Actions cache keeps only this repository's compiled V8
