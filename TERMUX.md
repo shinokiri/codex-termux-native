@@ -6,7 +6,7 @@ independently. No third-party Codex fork patches or release binaries are used.
 
 ## Status
 
-This is a development branch, not an installable or device-validated release.
+This is a development candidate, not a device-validated release.
 
 [Focused CI at `ea090a37`](https://github.com/shinokiri/codex-termux-native/actions/runs/34035460649)
 passed all 268 selected tests (plus one intentionally skipped subprocess
@@ -24,8 +24,11 @@ now use 256, matching the compiler's recommendation and the app-server crate.
 The successful independent Android build verifies those compiler-limit fixes.
 The corrected full build then reached the code-mode host's final link and exposed
 V8's required `__clear_cache` compiler builtin. The branch now links the
-NDK-selected compiler-rt builtins archive explicitly; verification of that fix,
-full packaging and device execution remain separate gates.
+NDK-selected compiler-rt builtins archive explicitly.
+The [resulting Android source build at `45d7ad58`](https://github.com/shinokiri/codex-termux-native/actions/runs/34043607693)
+restored and verified the matching V8 pair, compiled and linked all three
+executables, passed the ELF and package checks, and uploaded the candidate.
+Device execution remains a separate gate.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
@@ -33,7 +36,7 @@ full packaging and device execution remain separate gates.
 | OpenSSL | Android-only vendored build feature; Android CLI and network-probe linking passed | Device handshakes; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
-| V8 / code mode | Exact `v8 = 150.4.0` Android source compilation and paired cache verification passed; Android binding-header patch; NDK compiler builtins selected for the final link | Corrected executable linking, V8 sandbox and code-mode execution on device |
+| V8 / code mode | Exact `v8 = 150.4.0` Android source compilation, paired cache verification and code-mode host linking passed; Android binding-header patch; NDK compiler builtins selected for the final link | V8 sandbox and code-mode execution on device |
 | PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
 | Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshot v2 resolves `env` through `PATH`; stdio MCP children inherit Termux execution variables | Targeted shell tests passed; full Android build and subprocess execution pending |
 | Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
