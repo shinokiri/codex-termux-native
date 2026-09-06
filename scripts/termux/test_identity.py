@@ -53,3 +53,25 @@ class IdentityTest(unittest.TestCase):
             self.assertEqual(
                 manifest.read_text(), '[workspace.package]\nversion = "0.153.4"\n'
             )
+            (root / "scripts/termux/upstream.json").write_text(
+                json.dumps(
+                    {"ref": "rust-v0.153.4", "commit": "b" * 40, "release_revision": 2}
+                )
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "commit",
+                    "-qam",
+                    "release fixture",
+                ],
+                cwd=root,
+                check=True,
+            )
+            published = build_identity(root)
+            self.assertEqual(published["release_version"], "0.153.4+termux.2")
+            self.assertEqual(published["cli_version"], published["release_version"])

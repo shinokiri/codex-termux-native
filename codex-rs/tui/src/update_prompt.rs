@@ -111,7 +111,7 @@ impl UpdatePromptScreen {
         Self {
             request_frame,
             latest_version,
-            current_version: env!("CARGO_PKG_VERSION").to_string(),
+            current_version: crate::version::CODEX_CLI_VERSION.to_string(),
             update_action,
             highlighted: UpdateSelection::UpdateNow,
             selection: None,
@@ -253,11 +253,13 @@ mod tests {
     use ratatui::widgets::FrameExt;
 
     fn new_prompt() -> UpdatePromptScreen {
-        UpdatePromptScreen::new(
+        let mut screen = UpdatePromptScreen::new(
             FrameRequester::test_dummy(),
             "9.9.9".into(),
             UpdateAction::NpmGlobalLatest,
-        )
+        );
+        screen.current_version = "0.0.0".to_string();
+        screen
     }
 
     #[test]

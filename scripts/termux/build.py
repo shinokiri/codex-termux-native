@@ -466,14 +466,21 @@ def package(args):
         },
     }
     (stage / "BUILD-INFO.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    archive = args.work_dir / "codex-termux-native-android-arm64.tar.gz"
+    release_version = identity.get("release_version")
+    archive_name = (
+        f"codex-package-{TARGET}.tar.gz"
+        if release_version
+        else "codex-termux-native-android-arm64.tar.gz"
+    )
+    archive = args.work_dir / archive_name
     with (
         archive.open("wb") as raw,
         gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed,
     ):
         with tarfile.open(fileobj=compressed, mode="w") as tar:
             for path in sorted(stage.rglob("*")):
-                info = tar.gettarinfo(path, arcname=str(path.relative_to(stage.parent)))
+                package_root = stage if release_version else stage.parent
+                info = tar.gettarinfo(path, arcname=str(path.relative_to(package_root)))
                 info.uid = info.gid = info.mtime = 0
                 info.uname = info.gname = ""
                 if path.is_file():
@@ -481,9 +488,14 @@ def package(args):
                         tar.addfile(info, contents)
                 else:
                     tar.addfile(info)
-    archive.with_suffix(archive.suffix + ".sha256").write_text(
-        f"{digest(archive)}  {archive.name}\n"
+    checksum = (
+        args.work_dir / "codex-package_SHA256SUMS"
+        if release_version
+        else archive.with_suffix(archive.suffix + ".sha256")
     )
+    checksum.write_text(f"{digest(archive)}  {archive.name}\n")
+    if release_version:
+        shutil.copy2(ROOT / "scripts/install/install.sh", args.work_dir / "install.sh")
     print(f"Candidate: {archive}; Android runtime validation is still required.")
 
 

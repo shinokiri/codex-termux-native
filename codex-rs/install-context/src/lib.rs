@@ -7,6 +7,9 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use semver::Version;
 use serde::Deserialize;
 
+#[cfg(any(target_os = "android", test))]
+pub mod termux;
+
 const BIN_DIRNAME: &str = "bin";
 const CODE_MODE_HOST_EXECUTABLE_NAME: &str = if cfg!(windows) {
     "codex-code-mode-host.exe"

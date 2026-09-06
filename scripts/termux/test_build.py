@@ -138,6 +138,7 @@ class PackageTest(unittest.TestCase):
             ).encode(),
             "LICENSE": b"Codex license",
             "scripts/termux_smoke.py": b"smoke check",
+            "scripts/install/install.sh": b"#!/bin/sh\nexit 0\n",
             "patches/termux-rusty-v8-bindgen.patch": b"binding patch",
             "work/rusty-v8/LICENSE": b"rusty-v8 license",
             "work/rusty-v8/v8/LICENSE": b"V8 license",
@@ -212,6 +213,27 @@ class PackageTest(unittest.TestCase):
                         in archive.getnames(),
                         needed,
                     )
+
+    def test_release_archive_matches_the_standalone_installer_layout(self):
+        identity_path = self.args.work_dir / "codex-build.json"
+        identity = json.loads(identity_path.read_text())
+        for field in ("package_version", "cli_version", "release_version"):
+            identity[field] = "0.153.4+termux.1"
+        identity_path.write_text(json.dumps(identity))
+        build.package(self.args)
+        archive_path = self.args.work_dir / f"codex-package-{build.TARGET}.tar.gz"
+        with tarfile.open(archive_path) as archive:
+            self.assertIn("bin/codex", archive.getnames())
+            self.assertIn("bin/codex-code-mode-host", archive.getnames())
+            self.assertIn("codex-package.json", archive.getnames())
+            self.assertNotIn("codex-termux-native/bin/codex", archive.getnames())
+        self.assertEqual(
+            (self.args.work_dir / "codex-package_SHA256SUMS").read_text(),
+            f"{build.digest(archive_path)}  {archive_path.name}\n",
+        )
+        self.assertEqual(
+            (self.args.work_dir / "install.sh").read_bytes(), b"#!/bin/sh\nexit 0\n"
+        )
 
 
 if __name__ == "__main__":

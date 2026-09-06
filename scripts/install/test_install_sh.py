@@ -534,6 +534,7 @@ def run_installer_in(
     releases_checksum_path: Path | None = None,
     legacy_archive_path: Path | None = None,
     force_macos: bool = False,
+    platform: str | None = None,
     use_mirror: bool | None = False,
     releases_mode: str = "",
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
@@ -602,7 +603,7 @@ def run_installer_in(
                   exit 22
                 fi
                 ;;
-              https://github.com/openai/codex/releases/download/*/codex-package_SHA256SUMS)
+              https://github.com/openai/codex/releases/download/*/codex-package_SHA256SUMS|https://github.com/shinokiri/codex-termux-native/releases/download/*/codex-package_SHA256SUMS)
                 if [ "$CODEX_TEST_RELEASES_MODE" = "corrupt_checksum_and_github" ]; then
                   printf '<html>proxy error</html>\n' >"$output"
                   exit 0
@@ -613,7 +614,7 @@ def run_installer_in(
                   exit 22
                 fi
                 ;;
-              https://github.com/openai/codex/releases/download/*/codex-package-*.tar.gz)
+              https://github.com/openai/codex/releases/download/*/codex-package-*.tar.gz|https://github.com/shinokiri/codex-termux-native/releases/download/*/codex-package-*.tar.gz)
                 if [ -n "$CODEX_TEST_ARCHIVE_PATH" ]; then
                   cp "$CODEX_TEST_ARCHIVE_PATH" "$output"
                 else
@@ -636,13 +637,18 @@ def run_installer_in(
         encoding="utf-8",
     )
     fake_curl.chmod(0o755)
-    if force_macos:
+    if force_macos or platform == "android":
         fake_uname = bin_dir / "uname"
         fake_uname.write_text(
             "#!/bin/sh\n"
             'case "$1" in\n'
-            "  -s) printf 'Darwin\\n' ;;\n"
-            "  -m) printf 'arm64\\n' ;;\n"
+            + (
+                "  -s) printf 'Linux\\n' ;;\n"
+                if platform == "android"
+                else "  -s) printf 'Darwin\\n' ;;\n"
+            )
+            + ("  -o) printf 'Android\\n' ;;\n" if platform == "android" else "")
+            + "  -m) printf 'arm64\\n' ;;\n"
             "esac\n",
             encoding="utf-8",
         )
@@ -681,6 +687,8 @@ def run_installer_in(
             "SHELL": "/bin/sh",
         }
     )
+    if platform == "android":
+        env["PREFIX"] = str(root / "termux-prefix")
     if use_mirror is None:
         env.pop("CODEX_INSTALLER_USE_RELEASES_OPENAI_COM", None)
     else:

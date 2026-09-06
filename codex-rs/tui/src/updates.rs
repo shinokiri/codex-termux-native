@@ -5,6 +5,7 @@ use crate::npm_registry;
 use crate::npm_registry::NpmPackageInfo;
 use crate::update_action;
 use crate::update_action::UpdateAction;
+#[cfg(not(target_os = "android"))]
 use crate::update_versions::extract_version_from_latest_tag;
 use crate::update_versions::is_newer;
 use crate::update_versions::is_source_build_version;
@@ -25,7 +26,9 @@ use crate::version::CODEX_CLI_VERSION;
 pub(crate) use crate::updates_cache::dismiss_version;
 
 pub fn get_upgrade_version(config: &Config) -> Option<String> {
-    if !config.check_for_update_on_startup || is_source_build_version(CODEX_CLI_VERSION) {
+    if !config.check_for_update_on_startup
+        || (!cfg!(target_os = "android") && is_source_build_version(CODEX_CLI_VERSION))
+    {
         return None;
     }
 
@@ -59,11 +62,22 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
 
 // We use the latest version from the cask if installation is via homebrew - homebrew does not immediately pick up the latest release and can lag behind.
 const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
+#[cfg(not(target_os = "android"))]
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+#[cfg(target_os = "android")]
+const LATEST_RELEASE_URL: &str = codex_install_context::termux::LATEST_RELEASE_URL;
 
 #[derive(Deserialize, Debug, Clone)]
 struct ReleaseInfo {
     tag_name: String,
+    #[cfg(target_os = "android")]
+    assets: Vec<ReleaseAsset>,
+}
+
+#[cfg(target_os = "android")]
+#[derive(Deserialize, Debug, Clone)]
+struct ReleaseAsset {
+    name: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -133,9 +147,7 @@ async fn check_for_update(
 async fn fetch_latest_github_release_version(
     client_pool: &RouteAwareClientPool,
 ) -> anyhow::Result<String> {
-    let ReleaseInfo {
-        tag_name: latest_tag_name,
-    } = client_pool
+    let release = client_pool
         .get(LATEST_RELEASE_URL)
         .headers(default_headers())
         .send()
@@ -143,13 +155,22 @@ async fn fetch_latest_github_release_version(
         .error_for_status()?
         .json::<ReleaseInfo>()
         .await?;
-    extract_version_from_latest_tag(&latest_tag_name)
+    #[cfg(target_os = "android")]
+    {
+        let assets = release.assets.into_iter().map(|asset| asset.name).collect::<Vec<_>>();
+        codex_install_context::termux::version_from_release(&release.tag_name, &assets)
+            .ok_or_else(|| anyhow::anyhow!("Termux release is missing its completed package"))
+    }
+    #[cfg(not(target_os = "android"))]
+    extract_version_from_latest_tag(&release.tag_name)
 }
 
 /// Returns the latest version to show in a popup, if it should be shown.
 /// This respects the user's dismissal choice for the current latest version.
 pub fn get_upgrade_version_for_popup(config: &Config) -> Option<String> {
-    if !config.check_for_update_on_startup || is_source_build_version(CODEX_CLI_VERSION) {
+    if !config.check_for_update_on_startup
+        || (!cfg!(target_os = "android") && is_source_build_version(CODEX_CLI_VERSION))
+    {
         return None;
     }
 

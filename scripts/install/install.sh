@@ -11,6 +11,15 @@ RELEASES_CONNECT_TIMEOUT=10
 RELEASES_METADATA_TIMEOUT=30
 RELEASES_ASSET_TIMEOUT=300
 release_source="github"
+RELEASE_REPOSITORY="openai/codex"
+RELEASE_TAG_PREFIX="rust-v"
+IS_TERMUX=false
+if [ "$(uname -o 2>/dev/null || true)" = "Android" ]; then
+  IS_TERMUX=true
+  RELEASE_REPOSITORY="shinokiri/codex-termux-native"
+  RELEASE_TAG_PREFIX="termux-v"
+  PREFER_RELEASES_OPENAI_COM=false
+fi
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/codex"
@@ -46,6 +55,9 @@ normalize_version() {
     rust-v*)
       printf '%s\n' "${1#rust-v}"
       ;;
+    termux-v*)
+      printf '%s\n' "${1#termux-v}"
+      ;;
     v*)
       printf '%s\n' "${1#v}"
       ;;
@@ -59,6 +71,14 @@ validate_version() {
   version="$1"
 
   if [ "$version" = "latest" ]; then
+    return
+  fi
+
+  if [ "$IS_TERMUX" = "true" ]; then
+    if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\+termux\.[1-9][0-9]*$'; then
+      echo "Invalid Termux version: $version. Expected latest or x.y.z+termux.N." >&2
+      return 1
+    fi
     return
   fi
 
@@ -307,7 +327,7 @@ release_url_for_asset() {
   asset="$1"
   resolved_version="$2"
 
-  printf 'https://github.com/openai/codex/releases/download/rust-v%s/%s\n' "$resolved_version" "$asset"
+  printf 'https://github.com/%s/releases/download/%s%s/%s\n' "$RELEASE_REPOSITORY" "$RELEASE_TAG_PREFIX" "$resolved_version" "$asset"
 }
 
 releases_url_for_asset() {
@@ -320,7 +340,7 @@ releases_url_for_asset() {
 release_metadata_url() {
   resolved_version="$1"
 
-  printf 'https://api.github.com/repos/openai/codex/releases/tags/rust-v%s\n' "$resolved_version"
+  printf 'https://api.github.com/repos/%s/releases/tags/%s%s\n' "$RELEASE_REPOSITORY" "$RELEASE_TAG_PREFIX" "$resolved_version"
 }
 
 parse_downloaded_release_metadata() {
@@ -335,7 +355,7 @@ parse_downloaded_release_metadata() {
 resolve_metadata_version() {
   release_tag="$(printf '%s\n' "$release_metadata" | awk -F '\t' '$1 == "tag_name" { print $2; exit }')"
   case "$release_tag" in
-    rust-v*) metadata_version="${release_tag#rust-v}" ;;
+    "$RELEASE_TAG_PREFIX"*) metadata_version="${release_tag#"$RELEASE_TAG_PREFIX"}" ;;
     *) metadata_version="" ;;
   esac
   if [ -z "$metadata_version" ]; then
@@ -349,7 +369,7 @@ resolve_release_from_github() {
   normalized_version="$1"
   if [ "$normalized_version" = "latest" ]; then
     requested_release="latest"
-    metadata_url="https://api.github.com/repos/openai/codex/releases/latest"
+    metadata_url="https://api.github.com/repos/$RELEASE_REPOSITORY/releases/latest"
   else
     resolved_version="$normalized_version"
     requested_release="$resolved_version"
@@ -943,8 +963,10 @@ install_package_release() {
   tar -xzf "$archive_path" -C "$stage_release"
   chmod 0755 \
     "$stage_release/bin/codex" \
-    "$stage_release/bin/codex-code-mode-host" \
-    "$stage_release/codex-path/rg"
+    "$stage_release/bin/codex-code-mode-host"
+  if [ "$IS_TERMUX" != "true" ]; then
+    chmod 0755 "$stage_release/codex-path/rg"
+  fi
   if [ -f "$stage_release/codex-resources/bwrap" ]; then
     chmod 0755 "$stage_release/codex-resources/bwrap"
   fi
@@ -998,9 +1020,11 @@ release_dir_is_complete() {
       [ -f "$release_dir/codex-package.json" ] &&
         [ -x "$release_dir/bin/codex" ] &&
         [ -x "$release_dir/bin/codex-code-mode-host" ] &&
-        [ -x "$release_dir/codex" ] &&
-        [ -x "$release_dir/codex-path/rg" ] ||
+        [ -x "$release_dir/codex" ] ||
         return 1
+      if [ "$IS_TERMUX" != "true" ]; then
+        [ -x "$release_dir/codex-path/rg" ] || return 1
+      fi
       ;;
     legacy-platform-npm)
       [ -x "$release_dir/codex" ] &&
@@ -1013,6 +1037,8 @@ release_dir_is_complete() {
   esac
 
   case "$layout:$expected_target" in
+    package:aarch64-linux-android)
+      ;;
     package:*linux* | legacy-platform-npm:*linux*)
       [ -x "$release_dir/codex-resources/bwrap" ] || return 1
       ;;
@@ -1102,7 +1128,15 @@ if [ "$os" = "darwin" ] && [ "$arch" = "x86_64" ]; then
   fi
 fi
 
-if [ "$os" = "darwin" ]; then
+if [ "$IS_TERMUX" = "true" ]; then
+  if [ "$arch" != "aarch64" ] || [ -z "${PREFIX:-}" ]; then
+    echo "This package requires ARM64 Termux." >&2
+    exit 1
+  fi
+  npm_tag="android-arm64"
+  vendor_target="aarch64-linux-android"
+  platform_label="Termux (Android ARM64)"
+elif [ "$os" = "darwin" ]; then
   if [ "$arch" = "aarch64" ]; then
     npm_tag="darwin-arm64"
     vendor_target="aarch64-apple-darwin"

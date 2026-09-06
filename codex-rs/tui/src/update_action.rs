@@ -1,8 +1,8 @@
-#[cfg(any(not(debug_assertions), test))]
+#[cfg(any(test, all(not(debug_assertions), not(target_os = "android"))))]
 use codex_install_context::InstallContext;
-#[cfg(any(not(debug_assertions), test))]
+#[cfg(any(test, all(not(debug_assertions), not(target_os = "android"))))]
 use codex_install_context::InstallMethod;
-#[cfg(any(not(debug_assertions), test))]
+#[cfg(any(test, all(not(debug_assertions), not(target_os = "android"))))]
 use codex_install_context::StandalonePlatform;
 
 /// Update action the CLI should perform after the TUI exits.
@@ -25,7 +25,7 @@ pub enum UpdateAction {
 }
 
 impl UpdateAction {
-    #[cfg(any(not(debug_assertions), test))]
+    #[cfg(any(test, all(not(debug_assertions), not(target_os = "android"))))]
     pub(crate) fn from_install_context(context: &InstallContext) -> Option<Self> {
         match &context.method {
             InstallMethod::Npm => Some(UpdateAction::NpmGlobalLatest),
@@ -53,7 +53,10 @@ impl UpdateAction {
                 "sh",
                 &[
                     "-c",
+                    #[cfg(not(target_os = "android"))]
                     "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh",
+                    #[cfg(target_os = "android")]
+                    codex_install_context::termux::INSTALL_COMMAND,
                 ],
             ),
             UpdateAction::StandaloneWindows => (
@@ -78,6 +81,11 @@ impl UpdateAction {
 
 #[cfg(not(debug_assertions))]
 pub fn get_update_action() -> Option<UpdateAction> {
+    #[cfg(target_os = "android")]
+    {
+        Some(UpdateAction::StandaloneUnix)
+    }
+    #[cfg(not(target_os = "android"))]
     UpdateAction::from_install_context(InstallContext::current())
 }
 
@@ -153,6 +161,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "android"))]
     fn standalone_update_commands_rerun_latest_installer() {
         assert_eq!(
             UpdateAction::StandaloneUnix.command_args(),

@@ -32,8 +32,14 @@ use super::network;
 
 const MAX_VERSION_RESPONSE_BYTES: usize = 1024 * 1024;
 
+#[cfg(not(target_os = "android"))]
 const VERSION_FILE_NAME: &str = "version.json";
+#[cfg(target_os = "android")]
+const VERSION_FILE_NAME: &str = codex_install_context::termux::VERSION_FILENAME;
+#[cfg(not(target_os = "android"))]
 const GITHUB_LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+#[cfg(target_os = "android")]
+const GITHUB_LATEST_RELEASE_URL: &str = codex_install_context::termux::LATEST_RELEASE_URL;
 const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
 #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 const DESKTOP_UPDATE_URL: &str = "https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml";
@@ -78,7 +84,9 @@ pub(super) async fn updates_check(config: &Config) -> DoctorCheck {
     match fetch_latest_version(&client, &install_context).await {
         Ok(latest_version) => {
             details.push(format!("latest version: {latest_version}"));
-            if is_newer(&latest_version, env!("CARGO_PKG_VERSION")) == Some(true) {
+            let current_version =
+                option_env!("CODEX_TERMUX_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+            if is_newer(&latest_version, current_version) == Some(true) {
                 details.push("latest version status: newer version is available".to_string());
             } else {
                 details.push("latest version status: current version is not older".to_string());
@@ -388,6 +396,9 @@ fn push_cached_version_details(details: &mut Vec<String>, version_file: &Path) {
 }
 
 fn update_action_label(context: &InstallContext) -> &'static str {
+    if cfg!(target_os = "android") {
+        return "Termux standalone installer";
+    }
     match &context.method {
         InstallMethod::Npm => "npm install -g @openai/codex",
         InstallMethod::Bun => "bun install -g @openai/codex",
@@ -424,7 +435,11 @@ async fn fetch_latest_github_release_version(
 
     let info = http_get_json::<ReleaseInfo>(client, GITHUB_LATEST_RELEASE_URL).await?;
     info.tag_name
-        .strip_prefix("rust-v")
+        .strip_prefix(if cfg!(target_os = "android") {
+            "termux-v"
+        } else {
+            "rust-v"
+        })
         .map(str::to_string)
         .ok_or_else(|| format!("failed to parse latest tag {}", info.tag_name))
 }
@@ -471,12 +486,18 @@ where
 }
 
 fn is_newer(latest: &str, current: &str) -> Option<bool> {
+    #[cfg(target_os = "android")]
+    {
+        codex_install_context::termux::is_newer(latest, current)
+    }
+    #[cfg(not(target_os = "android"))]
     match (parse_version(latest), parse_version(current)) {
         (Some(latest), Some(current)) => Some(latest > current),
         (Some(_), None) | (None, Some(_)) | (None, None) => None,
     }
 }
 
+#[cfg(any(not(target_os = "android"), test))]
 fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
     let mut parts = value.trim().split('.');
     let major = parts.next()?.parse::<u64>().ok()?;

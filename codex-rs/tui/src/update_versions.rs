@@ -1,10 +1,16 @@
 pub(crate) fn is_newer(latest: &str, current: &str) -> Option<bool> {
+    #[cfg(target_os = "android")]
+    {
+        codex_install_context::termux::is_newer(latest, current)
+    }
+    #[cfg(not(target_os = "android"))]
     match (parse_version(latest), parse_version(current)) {
         (Some(l), Some(c)) => Some(l > c),
         _ => None,
     }
 }
 
+#[cfg(any(not(target_os = "android"), test))]
 pub(crate) fn extract_version_from_latest_tag(latest_tag_name: &str) -> anyhow::Result<String> {
     latest_tag_name
         .strip_prefix("rust-v")

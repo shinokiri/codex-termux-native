@@ -8,13 +8,19 @@ on:
       - "codex-rs/tui/**"
       - "codex-rs/exec/**"
       - "codex-rs/cli/**"
+      - "codex-rs/install-context/**"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: termux-tui-${{ github.ref }}
+  group: termux-tui-${{ inputs.source_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,6 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
@@ -38,7 +45,17 @@ jobs:
           tool: just@1.51.0,nextest@0.9.143
       - name: Test exec behavior and CLI and TUI session resume
         run: >-
-          just test --locked -p codex-exec -p codex-cli -p codex-tui --lib --bin codex
+          just test --locked -p codex-exec -p codex-cli -p codex-tui -p codex-install-context --lib --bin codex
           -E 'package(codex-exec)
-          or (package(codex-cli) and test(resume))
-          or (package(codex-tui) and test(session_resume::tests::))'
+          or package(codex-install-context)
+          or (package(codex-cli) and (test(resume) or test(update)))
+          or (package(codex-tui) and
+            (test(session_resume::tests::) or test(update_action::tests::)
+              or test(update_versions::tests::) or test(updates_cache::tests::)
+              or test(update_prompt::tests::)))'
+      - name: Test the update command entry point
+        run: just test --locked -p codex-cli --test update
+      - name: Check update-channel helpers with Clippy
+        run: just fix -p codex-install-context --locked --lib
+      - name: Check generated changes
+        run: git diff --exit-code
