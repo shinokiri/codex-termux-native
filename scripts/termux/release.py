@@ -15,9 +15,9 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 if __package__:
-    from .release_source import assemble, git
+    from .release_source import assemble, git, refresh_prepared_locks
 else:
-    from release_source import assemble, git
+    from release_source import assemble, git, refresh_prepared_locks
 
 ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY = "shinokiri/codex-termux-native"
@@ -97,6 +97,9 @@ def prepare(args, api):
             build="false", reason="already-attempted-use-retry-for-a-failed-run"
         )
         return
+    if args.check_only:
+        write_outputs(build="true")
+        return
     port_commit = git(ROOT, "rev-parse", args.port_ref)
     if not args.dry_run and not previous:
         api.repo(
@@ -107,29 +110,29 @@ def prepare(args, api):
     branch = f"termux/releases/{version}"
     existing = api.repo(f"git/ref/heads/{quote(branch, safe='/')}")
     if existing and not args.dry_run:
-        commit = existing["object"]["sha"]
+        commit = refresh_prepared_locks(ROOT, args.work_dir, existing["object"]["sha"])
     else:
         commit = assemble(ROOT, args.work_dir, port_commit, tag, args.revision)
-        if not args.dry_run:
-            # Pass the credential through Git's environment configuration, never
-            # through a logged command or a persisted remote URL.
-            authorization = base64.b64encode(
-                f"x-access-token:{api.token}".encode()
-            ).decode()
-            env = os.environ.copy()
-            env.update(
-                {
-                    "GIT_CONFIG_COUNT": "1",
-                    "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-                    "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {authorization}",
-                }
-            )
-            subprocess.run(
-                ["git", "push", "origin", f"{commit}:refs/heads/{branch}"],
-                cwd=ROOT,
-                env=env,
-                check=True,
-            )
+    if not args.dry_run and (not existing or commit != existing["object"]["sha"]):
+        # Pass the credential through Git's environment configuration, never
+        # through a logged command or a persisted remote URL.
+        authorization = base64.b64encode(
+            f"x-access-token:{api.token}".encode()
+        ).decode()
+        env = os.environ.copy()
+        env.update(
+            {
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+                "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {authorization}",
+            }
+        )
+        subprocess.run(
+            ["git", "push", "origin", f"{commit}:refs/heads/{branch}"],
+            cwd=ROOT,
+            env=env,
+            check=True,
+        )
     write_outputs(
         build="true", source_ref=commit, version=version, release_tag=release_tag
     )
@@ -231,6 +234,7 @@ def main():
     prepare_parser.add_argument("--port-ref", default="HEAD")
     prepare_parser.add_argument("--retry", action="store_true")
     prepare_parser.add_argument("--dry-run", action="store_true")
+    prepare_parser.add_argument("--check-only", action="store_true")
     publish_parser = commands.add_parser("publish")
     publish_parser.add_argument("--artifact-dir", type=Path, required=True)
     publish_parser.add_argument("--version", required=True)
@@ -239,7 +243,9 @@ def main():
     if args.command == "prepare" and args.revision < 1:
         parser.error("The Termux revision must be positive")
     token = os.environ.get("GH_TOKEN")
-    if not token and not (args.command == "prepare" and args.dry_run):
+    if not token and not (
+        args.command == "prepare" and (args.dry_run or args.check_only)
+    ):
         parser.error("GH_TOKEN is required for release writes")
     api = GitHub(token)
     if args.command == "prepare":

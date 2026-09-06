@@ -17,11 +17,12 @@ def align_workspace_versions(root):
     workspace = tomllib.loads((workspace_root / "Cargo.toml").read_text())["workspace"]
     version = workspace["package"]["version"]
     inherited = set()
-    for member in workspace["members"]:
-        for path in workspace_root.glob(f"{member}/Cargo.toml"):
-            package = tomllib.loads(path.read_text()).get("package", {})
-            if package.get("version") == {"workspace": True}:
-                inherited.add(package["name"])
+    # Cargo also includes path dependencies that are not listed in members,
+    # including the nested test-support crates. Their lock entries must agree.
+    for path in workspace_root.rglob("Cargo.toml"):
+        package = tomllib.loads(path.read_text()).get("package", {})
+        if package.get("version") == {"workspace": True}:
+            inherited.add(package["name"])
     lock = workspace_root / "Cargo.lock"
     blocks = lock.read_text().split("[[package]]")
     for index, block in enumerate(blocks[1:], 1):
@@ -76,6 +77,7 @@ def assemble(root, destination, port_commit, tag, revision):
         ".github/workflows",
     )
     align_workspace_versions(destination)
+    subprocess.run(["just", "bazel-lock-update"], cwd=destination, check=True)
     (destination / "scripts/termux/upstream.json").write_text(
         json.dumps(
             {
@@ -108,3 +110,25 @@ def assemble(root, destination, port_commit, tag, revision):
     # avoids introducing that tag's unrelated workflow history on the new branch.
     git(destination, "reset", "--soft", commit)
     return commit
+
+
+def refresh_prepared_locks(root, destination, commit):
+    """Keep a prepared branch's fixes while canonicalizing its internal locks."""
+    git(root, "fetch", "--depth=1", "origin", commit)
+    git(root, "worktree", "add", "--detach", destination, commit)
+    align_workspace_versions(destination)
+    subprocess.run(["just", "bazel-lock-update"], cwd=destination, check=True)
+    if not git(destination, "diff", "--", "codex-rs/Cargo.lock", "MODULE.bazel.lock"):
+        return commit
+    git(destination, "add", "codex-rs/Cargo.lock", "MODULE.bazel.lock")
+    git(
+        destination,
+        "-c",
+        "user.name=github-actions[bot]",
+        "-c",
+        "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+        "commit",
+        "-m",
+        "fix(termux): align prepared release lockfiles",
+    )
+    return git(destination, "rev-parse", "HEAD")

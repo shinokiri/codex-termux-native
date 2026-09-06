@@ -74,6 +74,10 @@ release assets are not replaced. Source conflicts and failed CI require a fix
 before that version can reach clients.
 Pushing a change to the release controller also retries the current attempt;
 unchanged scheduled checks do not.
+Source preparation aligns versions for explicit and implicit workspace members
+and runs `just bazel-lock-update` before committing. Retries preserve source
+fixes already on the prepared branch while refreshing these generated locks.
+Unchanged release checks finish before installing build tools.
 
 ## Client update experience
 

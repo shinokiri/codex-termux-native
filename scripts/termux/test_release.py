@@ -96,12 +96,18 @@ class ReleaseTest(unittest.TestCase):
             (root / "codex-rs/extra/Cargo.toml").write_text(
                 '[package]\nname = "extra"\nversion.workspace = true\n'
             )
+            (root / "codex-rs/extra/tests/support").mkdir(parents=True)
+            (root / "codex-rs/extra/tests/support/Cargo.toml").write_text(
+                '[package]\nname = "support"\nversion.workspace = true\n'
+            )
             lock = root / "codex-rs/Cargo.lock"
             registry = '\nname = "external"\nversion = "1.2.3"\nsource = "registry+https://example.com"\n'
             lock.write_text(
                 'version = 4\n\n[[package]]\nname = "extra"\nversion = "0.0.0"\n\n[[package]]'
                 + registry
+                + '\n[[package]]\nname = "support"\nversion = "0.0.0"\n'
             )
             align_workspace_versions(root)
             self.assertIn('name = "extra"\nversion = "0.153.4"', lock.read_text())
             self.assertIn(registry, lock.read_text())
+            self.assertIn('name = "support"\nversion = "0.153.4"', lock.read_text())
