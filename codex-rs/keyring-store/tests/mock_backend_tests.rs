@@ -18,7 +18,10 @@ fn mock_backend_cannot_report_a_persistent_save() -> Result<(), Box<dyn std::err
 
     let store = DefaultKeyringStore;
     let error = store.save(service, account, "test-value").unwrap_err();
-    assert!(matches!(error.into_error(), KeyringError::NoStorageAccess(_)));
+    assert!(matches!(
+        error.into_error(),
+        KeyringError::NoStorageAccess(_)
+    ));
 
     // Absence stays nonfatal so callers can read and delete their fallback file.
     assert!(store.load(service, account)?.is_none());
