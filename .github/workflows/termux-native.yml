@@ -3,6 +3,10 @@ name: Termux native checks
 on:
   push:
     branches: ["termux/**"]
+    paths-ignore:
+      - "TERMUX.md"
+      - ".github/workflows/termux-build.yml"
+      - "scripts/termux/**"
   workflow_dispatch:
 
 permissions:
@@ -43,37 +47,7 @@ jobs:
         id: tests
         continue-on-error: true
         run: |
-          python3 -c 'import os; print({name: bool(os.environ.get(name)) for name in ("CODEX_CA_CERTIFICATE", "SSL_CERT_FILE", "SSL_CERT_DIR")})'
           env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command
-      - name: Diagnose TLS feature selection after a test failure
-        if: steps.tests.outcome == 'failure'
-        working-directory: codex-rs
-        run: |
-          cargo tree --locked -p codex-http-client -e features -i reqwest@0.12.28
-          python3 -c 'import os; from pathlib import Path; p = next((Path(os.environ["CARGO_HOME"]) / "registry/src").glob("*/reqwest-0.12.28/src/tls.rs")); s = p.read_text(); i = s.index("impl Default for TlsBackend"); print(s[i:i+650])'
-      - name: Compare failing TLS scenarios against the official baseline
-        if: steps.tests.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          git fetch --depth=1 origin ac192cd7937b0d73edc6dffe009940ae53782dd4
-          git worktree add --detach "${RUNNER_TEMP}/official-baseline" FETCH_HEAD
-          cd "${RUNNER_TEMP}/official-baseline"
-          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR CARGO_TARGET_DIR="${GITHUB_WORKSPACE}/codex-rs/target" just test --locked -p codex-http-client --lib -E 'test(tls_fallback_tests::) | test(request_failures_classify_real_untrusted_certificate_handshakes)'
-      - name: Trace TLS construction in the temporary baseline only
-        if: steps.tests.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          cd "${RUNNER_TEMP}/official-baseline"
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path("codex-rs/http-client/src/custom_ca.rs")
-          source = path.read_text()
-          needle = "    if let Some(bundle) = env_source.configured_ca_bundle() {"
-          assert source.count(needle) == 1
-          trace = '    eprintln!("TLS_DIAGNOSTIC builder={builder:?} custom_ca={}", env_source.configured_ca_bundle().is_some());\n'
-          path.write_text(source.replace(needle, trace + needle))
-          PY
-          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR CARGO_TARGET_DIR="${GITHUB_WORKSPACE}/codex-rs/target" just test --locked -p codex-http-client --lib -E 'test(retries_a_native_tls_protocol_failure_once_with_rustls)' --no-capture
       - name: Check the device network probe
         working-directory: codex-rs
         run: cargo check --locked -p codex-http-client --example termux_probe

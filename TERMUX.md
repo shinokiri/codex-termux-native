@@ -8,6 +8,11 @@ independently. No third-party Codex fork patches or release binaries are used.
 
 This is a development branch, not an installable or device-validated release.
 
+[Focused CI at `9360a962`](https://github.com/shinokiri/codex-termux-native/actions/runs/34027445362)
+passed all 266 selected tests (plus one intentionally skipped subprocess
+fixture), Android lock/PTY API compilation, targeted Clippy, formatting and the
+Bazel lock check. The full Android source build is a separate gate.
+
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
 | File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
@@ -16,7 +21,7 @@ This is a development branch, not an installable or device-validated release.
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
 | V8 / code mode | Exact `v8 = 150.4.0` source build workflow, Android binding-header patch | Successful source build, native sandbox and code-mode execution |
 | PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
-| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; stdio MCP children inherit Termux execution variables | Targeted shell tests, full Android build and subprocess execution |
+| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; stdio MCP children inherit Termux execution variables | Targeted shell tests passed; full Android build and subprocess execution pending |
 
 The new file-lock crate preserves contention and real I/O errors. Unsupported
 filesystems do not silently receive permission to enter critical sections.
@@ -30,17 +35,18 @@ that every Android filesystem supports locking.
 
 ## Development checks
 
-The `Termux native checks` workflow runs on pushes to `termux/**`. It uses
+The `Termux native checks` workflow runs on relevant pushes to `termux/**`; build
+recipe changes use the separate Android source-build workflow. It uses
 read-only repository permissions, pinned action revisions, no account credentials
 for Codex, and three-day retention for small correction patches. It does not
 publish packages or releases.
 
 ```sh
-just test --locked -p codex-utils-file-lock
+just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command
 # Run in codex-rs:
-cargo check --locked -p codex-utils-file-lock --tests --target aarch64-linux-android
+cargo check --locked -p codex-utils-file-lock -p codex-utils-pty --tests --target aarch64-linux-android
 # Run from the repository:
-just fix -p codex-utils-file-lock --locked
+just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command --locked --examples
 just fmt
 just bazel-lock-update
 ```
@@ -52,7 +58,9 @@ Five Native-TLS-to-Rustls fallback tests also failed on the unmodified official
 baseline. Diagnostic execution showed custom-CA configuration was being
 introduced between the outer shell and test process. The check workflow now
 scrubs those CA variables at the test-process boundary; this does not affect
-Codex's runtime environment or custom-CA support.
+Codex's runtime environment or custom-CA support. All five fallback tests then
+passed. Temporary diagnostic instrumentation was confined to the baseline
+worktree and has been removed from the check workflow.
 
 ## Reference audit
 
