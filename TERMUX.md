@@ -11,17 +11,21 @@ This is a development branch, not an installable or device-validated release.
 [Focused CI at `9360a962`](https://github.com/shinokiri/codex-termux-native/actions/runs/34027445362)
 passed all 266 selected tests (plus one intentionally skipped subprocess
 fixture), Android lock/PTY API compilation, targeted Clippy, formatting and the
-Bazel lock check. The full Android source build is a separate gate.
+Bazel lock check.
+[The Android CLI check at `4fd1a006`](https://github.com/shinokiri/codex-termux-native/actions/runs/34029827256)
+also passed with the pinned NDK and release configuration, including the network
+probe. Full linking and the V8 source build are separate gates.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
 | File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
-| OpenSSL | Android-only vendored build feature | Full cross compilation; this does not configure certificate roots |
+| OpenSSL | Android-only vendored build feature; CLI Android compilation passed | Final linking and device handshakes; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
 | V8 / code mode | Exact `v8 = 150.4.0` source build workflow, Android binding-header patch | Successful source build, native sandbox and code-mode execution |
 | PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
 | Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; stdio MCP children inherit Termux execution variables | Targeted shell tests passed; full Android build and subprocess execution pending |
+| Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
 
 The new file-lock crate preserves contention and real I/O errors. Unsupported
 filesystems do not silently receive permission to enter critical sections.
@@ -53,11 +57,11 @@ This catches Android compiler errors in the CLI's dependencies while V8 builds;
 final linking, code-mode host execution and device networking remain separate checks.
 
 ```sh
-just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command
+just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store
 # Run in codex-rs:
-cargo check --locked -p codex-utils-file-lock -p codex-utils-pty --tests --target aarch64-linux-android
+cargo check --locked -p codex-utils-file-lock -p codex-utils-pty -p codex-keyring-store --tests --target aarch64-linux-android
 # Run from the repository:
-just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command --locked --examples
+just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store --locked --examples
 just fmt
 just bazel-lock-update
 # Build-script regressions (Python 3.11+, no V8 compilation or NDK required):
@@ -79,6 +83,15 @@ scrubs those CA variables at the test-process boundary; this does not affect
 Codex's runtime environment or custom-CA support. All five fallback tests then
 passed. Temporary diagnostic instrumentation was confined to the baseline
 worktree and has been removed from the check workflow.
+
+The locked `keyring` 3.6.3 defaults to an in-memory mock on Android. A save
+reports success but the next entry cannot retrieve it, suppressing the existing
+file fallback in automatic credential-storage mode. The port rejects saves to
+that actual mock backend; real keyring backends keep their existing behavior.
+Reads and deletion still report a missing entry so fallback files remain
+readable and removable. This is credential persistence, not a new storage format
+or an additional encryption layer. Explicit keyring-only mode reports that a
+persistent keyring backend is unavailable.
 
 ## Reference audit
 

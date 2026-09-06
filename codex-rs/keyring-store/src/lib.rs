@@ -74,6 +74,17 @@ impl KeyringStore for DefaultKeyringStore {
             value.len()
         );
         let entry = Entry::new(service, account).map_err(CredentialStoreError::new)?;
+        // On unsupported platforms such as Android, keyring defaults to a mock
+        // that forgets the secret when this entry is dropped. Reject that save
+        // so callers can use their existing persistent-file fallback.
+        if entry.get_credential().is::<keyring::mock::MockCredential>() {
+            return Err(CredentialStoreError::new(KeyringError::NoStorageAccess(
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "no persistent keyring backend is available on this platform",
+                )),
+            )));
+        }
         match entry.set_password(value) {
             Ok(()) => {
                 trace!("keyring.save success, service={service}, account={account}");

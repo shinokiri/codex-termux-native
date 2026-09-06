@@ -66,19 +66,26 @@ jobs:
           version: "0.11.3"
       - name: Verify workspace manifests
         run: python3 .github/scripts/verify_cargo_workspace_manifests.py
-      - name: Test kernel locks and existing HTTP certificate policy
+      - name: Test locks, HTTP, shell and keyring behavior
         id: tests
         continue-on-error: true
         run: |
-          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command
+          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store
+      - name: Test existing MCP credential fallback and deletion
+        run: >-
+          just test --locked -p codex-rmcp-client --lib
+          -E 'test(oauth::tests::load_oauth_tokens_falls_back_when_missing_in_keyring)
+          or test(oauth::tests::save_oauth_tokens_writes_fallback_when_keyring_fails)
+          or test(oauth::tests::delete_oauth_tokens_removes_all_storage)
+          or test(oauth::tests::delete_oauth_tokens_propagates_keyring_errors)'
       - name: Check the device network probe
         working-directory: codex-rs
         run: cargo check --locked -p codex-http-client --example termux_probe
-      - name: Check Android lock and PTY API compilation
+      - name: Check Android lock, PTY and keyring compilation
         working-directory: codex-rs
-        run: cargo check --locked -p codex-utils-file-lock -p codex-utils-pty --tests --target aarch64-linux-android
+        run: cargo check --locked -p codex-utils-file-lock -p codex-utils-pty -p codex-keyring-store --tests --target aarch64-linux-android
       - name: Apply targeted Clippy fixes
-        run: just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command --locked --examples
+        run: just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store --locked --examples
       - name: Format repository
         run: just fmt
       - name: Check generated changes
