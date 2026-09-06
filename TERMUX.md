@@ -15,8 +15,10 @@ API checks, the Android CLI and network-probe `cargo check`, targeted Clippy,
 formatting and the Bazel lock check.
 The [first Android source build](https://github.com/shinokiri/codex-termux-native/actions/runs/34026086815)
 completed its V8 compilation step, then failed during TUI code generation at
-Rust's default recursion limit. The Android TUI limit is now 256, as suggested
-by the compiler; its in-process app-server dependency already uses 256.
+Rust's default recursion limit. The subsequent independent CLI build passed
+TUI code generation but hit the same limit in `codex-exec`. Recursion limits
+apply per crate: Android's TUI and exec libraries and the final `codex` binary
+now use 256, matching the compiler's recommendation and the app-server crate.
 The corrected full build and device execution remain separate gates.
 
 | Area | Implementation | Validation still required |
@@ -75,8 +77,8 @@ library. This gate uses `cargo build` because `cargo check` missed the initial
 TUI recursion-depth failure during code generation. Code-mode host linking and
 device execution remain separate checks.
 
-TUI changes additionally run the existing session-resume tests on Linux through
-`just test -p codex-tui --lib -E 'test(session_resume::tests::)'`. Android compiler
+CLI, exec and TUI changes additionally run existing exec unit tests and CLI/TUI
+session-resume regressions on Linux through `just test`. Android compiler
 settings are exercised by the independent native CLI build.
 
 ```sh

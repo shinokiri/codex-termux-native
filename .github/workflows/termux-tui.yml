@@ -1,4 +1,4 @@
-name: Termux TUI regression checks
+name: Termux CLI regression checks
 
 on:
   push:
@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/termux-tui.yml"
       - "codex-rs/tui/**"
+      - "codex-rs/exec/**"
+      - "codex-rs/cli/**"
   workflow_dispatch:
 
 permissions:
@@ -34,5 +36,9 @@ jobs:
       - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
         with:
           tool: just@1.51.0,nextest@0.9.143
-      - name: Test TUI session resume behavior
-        run: just test --locked -p codex-tui --lib -E 'test(session_resume::tests::)'
+      - name: Test exec behavior and CLI and TUI session resume
+        run: >-
+          just test --locked -p codex-exec -p codex-cli -p codex-tui --lib --bin codex
+          -E 'package(codex-exec)
+          or (package(codex-cli) and test(resume))
+          or (package(codex-tui) and test(session_resume::tests::))'

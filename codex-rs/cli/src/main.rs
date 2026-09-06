@@ -1,3 +1,6 @@
+// This binary also generates code for the embedded app-server futures.
+#![cfg_attr(target_os = "android", recursion_limit = "256")]
+
 use clap::Args;
 use clap::CommandFactory;
 use clap::Parser;
