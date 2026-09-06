@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reqwest::Client::builder().no_proxy().timeout(timeout),
     )?;
     let response = client.head("https://chatgpt.com/").send().await?;
-    println!("HTTPS certificate verified; HTTP status: {}", response.status());
+    println!(
+        "HTTPS certificate verified; HTTP status: {}",
+        response.status()
+    );
 
     let mut connected = None;
     for address in addresses {

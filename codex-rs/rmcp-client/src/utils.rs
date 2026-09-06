@@ -172,6 +172,16 @@ pub(crate) const DEFAULT_ENV_VARS: &[&str] = &[
     "TERM",
     "TMPDIR",
     "TZ",
+    // Termux subprocesses need their prefix and execution/linker environment.
+    // Keep this local to Android stdio; remote MCP environments stay explicit.
+    #[cfg(target_os = "android")]
+    "PREFIX",
+    #[cfg(target_os = "android")]
+    "TERMUX_VERSION",
+    #[cfg(target_os = "android")]
+    "LD_PRELOAD",
+    #[cfg(target_os = "android")]
+    "LD_LIBRARY_PATH",
 ];
 
 #[cfg(windows)]
