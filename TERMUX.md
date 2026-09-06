@@ -1,6 +1,6 @@
 # Native Termux port
 
-This branch starts from official `openai/codex` commit
+Development of this port started from official `openai/codex` commit
 `ac192cd7937b0d73edc6dffe009940ae53782dd4`. It implements Android adaptations
 independently. No third-party Codex fork patches or release binaries are used.
 
@@ -15,9 +15,10 @@ observed on 2026-09-06.
 
 New builds stamp `codex --version` as
 `main.<upstream-commit>+termux.g<fork-commit>` for this development snapshot.
-A future build based on versioned upstream source retains its version, for
-example `0.153.4+termux.g<fork-commit>`. Local modified checkouts add `.dirty`.
-Cargo manifests, lockfiles and protocol version selection are not rewritten.
+Published builds retain the official version plus a numeric Termux revision,
+for example `0.153.4+termux.1`. Local modified development checkouts add `.dirty`.
+Version labels do not rewrite Cargo or protocol version selection. When adapting
+a release, newly added workspace crates inherit that release's Cargo version.
 The existing upstream build-info mechanism receives the fork commit, and the
 package includes `codex-package.json`: the TUI shows a source commit for main
 snapshots and a release version for versioned packages. `BUILD-INFO.json`
@@ -33,23 +34,70 @@ is incorporated. Check both official channels without compiling anything:
 python3 scripts/termux/check_upstream.py
 ```
 
-`Termux upstream status` runs this read-only comparison and writes an Actions
-summary. It includes a five-minute schedule offset from the top of the hour,
-but **the schedule is not active while this workflow exists only on
-`termux/native` and the fork's default branch remains `main`**. To enable it,
-either make `termux/native` the fork's default branch or place the workflow on
-the default branch. GitHub may delay scheduled runs. The checker reports state;
-it does not send change notifications, open update PRs, merge upstream or build
-packages.
+`Termux upstream status` remains a manual diagnostic. The `Termux release
+updates` workflow implements the release pipeline:
 
-For following releases, prepare an update branch from `termux/native`, integrate
-the selected official source, resolve conflicts in the small Android adaptation
-set and update the checkpoint. Keep main snapshots visibly separate from stable
-release builds. Run the affected regression checks and actual Android source
-build before promoting a new candidate. Reuse the V8 cache when its inputs are
-unchanged; a changed locked V8 version requires reviewing the matching source pin
-and binding patch. Fully automatic PR preparation and promotion are not yet
-configured.
+1. Read the latest published, non-prerelease official release. An unchanged
+   release/revision does not start another build.
+2. Check out its exact official tag and apply only our Android delta, measured
+   from the recorded upstream baseline. This avoids merging unreleased main
+   features into a package bearing a stable release number. Publish the prepared
+   source to `termux/releases/<version>` without rewriting any branch.
+3. Run formatting, installer/update and selected CLI/compatibility regressions,
+   plus the real Android build and ELF/package checks against that source commit.
+   Reuse V8 when its inputs match. A changed locked V8 version still requires
+   reviewing the source pin and binding patch.
+4. Create a draft GitHub release, upload the package, checksums and installer,
+   verify their digests, then publish it as the latest Termux release. Failures
+   leave the previous published release available to clients.
+
+The source branches omit our workflow files: the pipeline uses the reviewed
+workflows on the development branch and checks out the immutable source commit
+for each job. `BUILD-INFO.json` records that source commit; the Actions run's
+head commit identifies the pipeline and adaptation recipe instead.
+
+GitHub does not send an upstream repository's `release` event to a fork.
+The workflow therefore checks published releases every five minutes and also
+accepts an `upstream-release` repository dispatch. **Its scheduled trigger is
+inactive until `termux/native` is the fork's default branch.** GitHub may delay
+scheduled runs. The workflow uses the repository's built-in GitHub token; no
+OpenAI API key or separate hosting service is needed.
+
+Each attempted official version/revision has a small `termux-build-*` tag so a
+failed build does not repeat every five minutes. A failed source application
+retains conflict diagnostics. Fix the adaptation and use the workflow's `retry`
+input; an existing prepared source branch is reused on retry. To publish a new
+Termux fix for the same official version, increase the `revision` input. Published
+release assets are not replaced. Source conflicts and failed CI require a fix
+before that version can reach clients.
+
+## Client update experience
+
+Android builds check this repository's completed releases, display the existing
+update prompt, and run the native installer through `codex update`. The version
+comparison includes both the upstream version and Termux revision. Update state
+uses `version-termux.json`, so an old official-channel cache cannot announce a
+package before its Termux build exists. This retains the upstream startup check
+and cache behavior: the background check refreshes metadata for a later startup;
+it is not a server push to an already-running session.
+
+The shell installer is the official installer with Android target, release-source
+and package-layout adaptations. It verifies downloads and switches the complete
+CLI/code-mode-host package together. Failed downloads leave the current version
+selected. Sessions and authentication files are not replaced. Ripgrep continues
+to come from Termux rather than a bundled Linux binary.
+
+The first installation of an update-capable release uses:
+
+```sh
+curl -fsSL https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh | sh
+# Subsequent updates:
+codex update
+```
+
+This URL becomes usable after the first release is published. Older manually
+unpacked candidates need that initial installation once. Device validation of
+the prompt, installer and resulting binaries remains required.
 
 ## Status
 

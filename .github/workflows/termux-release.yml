@@ -1,0 +1,124 @@
+name: Termux release updates
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Termux revision for the current official stable release"
+        type: string
+        default: "1"
+      retry:
+        description: "Retry a previously attempted release after fixing the failure"
+        type: boolean
+        default: false
+  repository_dispatch:
+    types: [upstream-release]
+  # A fork does not receive openai/codex's release event. This checks for a new
+  # published stable release; no changed version means no build. Scheduled runs
+  # require this file on the fork's default branch.
+  schedule:
+    - cron: "3-58/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: termux-release-channel
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'shinokiri/codex-termux-native'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      build: ${{ steps.source.outputs.build }}
+      source_ref: ${{ steps.source.outputs.source_ref }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare the official release with our Android adaptations
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '1' }}
+          TERMUX_RELEASE_RETRY: ${{ inputs.retry || 'false' }}
+        run: |
+          options=()
+          if [ "$TERMUX_RELEASE_RETRY" = "true" ]; then options+=(--retry); fi
+          python3 scripts/termux/release.py prepare \
+            --work-dir "$RUNNER_TEMP/termux-release-source" \
+            --revision "$TERMUX_RELEASE_REVISION" "${options[@]}"
+      - name: Record source conflicts for maintenance
+        if: failure()
+        run: |
+          if [ -e "$RUNNER_TEMP/termux-release-source/.git" ]; then
+            git -C "$RUNNER_TEMP/termux-release-source" status --short
+            git -C "$RUNNER_TEMP/termux-release-source" diff > "$RUNNER_TEMP/termux-release-conflicts.patch"
+          fi
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: failure()
+        with:
+          name: termux-release-conflicts
+          path: ${{ runner.temp }}/termux-release-conflicts.patch
+          if-no-files-found: ignore
+          retention-days: 3
+
+  format:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/termux-format.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.source_ref }}
+
+  regression:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/termux-tui.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.source_ref }}
+
+  native:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/termux-native.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.source_ref }}
+      skip_android_cli: true
+
+  android:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/termux-build.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.source_ref }}
+
+  publish:
+    needs: [prepare, format, regression, native, android]
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: codex-termux-native-android-arm64-candidate
+          path: ${{ runner.temp }}/termux-release-artifact
+      - name: Publish the verified archive and installer together
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TERMUX_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          TERMUX_RELEASE_SOURCE: ${{ needs.prepare.outputs.source_ref }}
+        run: >-
+          python3 scripts/termux/release.py publish
+          --artifact-dir "$RUNNER_TEMP/termux-release-artifact"
+          --version "$TERMUX_RELEASE_VERSION" --source-ref "$TERMUX_RELEASE_SOURCE"

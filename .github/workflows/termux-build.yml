@@ -8,10 +8,18 @@ on:
       - "scripts/termux/**"
       - "!scripts/termux/check_upstream.py"
       - "!scripts/termux/test_upstream.py"
+      - "!scripts/termux/release.py"
+      - "!scripts/termux/release_source.py"
+      - "!scripts/termux/test_release.py"
       - "scripts/termux_smoke.py"
       - "patches/termux-rusty-v8-bindgen.patch"
       - "codex-rs/**"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,7 +27,7 @@ permissions:
 concurrency:
   # Let the current recipe start alongside the original bootstrap build.
   # Later pushes still share one queue instead of starting a build per commit.
-  group: termux-build-current-${{ github.ref }}
+  group: termux-build-current-${{ inputs.source_ref || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -35,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
       - name: Check source preparation retries and package contents
         run: python3 -m unittest discover -s scripts/termux -p 'test_*.py' -v
@@ -110,6 +119,9 @@ jobs:
           path: |
             ${{ runner.temp }}/termux-native/codex-termux-native-android-arm64.tar.gz
             ${{ runner.temp }}/termux-native/codex-termux-native-android-arm64.tar.gz.sha256
+            ${{ runner.temp }}/termux-native/codex-package-aarch64-linux-android.tar.gz
+            ${{ runner.temp }}/termux-native/codex-package_SHA256SUMS
+            ${{ runner.temp }}/termux-native/install.sh
           if-no-files-found: error
           retention-days: 3
           compression-level: 0

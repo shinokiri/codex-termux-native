@@ -8,10 +8,6 @@ on:
       - "scripts/termux/check_upstream.py"
       - "scripts/termux/upstream.json"
   workflow_dispatch:
-  # GitHub only runs schedules from the default branch. See TERMUX.md before
-  # enabling this on a fork whose default branch is still upstream's main.
-  schedule:
-    - cron: "3-58/5 * * * *"
 
 permissions:
   contents: read
