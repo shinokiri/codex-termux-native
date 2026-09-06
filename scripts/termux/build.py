@@ -275,14 +275,14 @@ def codex_env(args):
     return env
 
 
-def check_cli(args):
+def build_cli(args):
     # The CLI reaches code mode through a separate host process. Its Android
-    # compilation can be checked before the host's V8 library is available.
+    # code generation and linking can be tested before V8 is available.
     run(
         [
             "cargo",
             f"+{RUST}",
-            "check",
+            "build",
             "--locked",
             "--release",
             "--target",
@@ -443,7 +443,7 @@ def package(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "stage", choices=["prepare", "v8", "cache-key", "check-cli", "codex", "package"]
+        "stage", choices=["prepare", "v8", "cache-key", "cli", "codex", "package"]
     )
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--ndk", type=Path, required=True)
@@ -466,7 +466,7 @@ def main():
     {
         "prepare": prepare,
         "v8": build_v8,
-        "check-cli": check_cli,
+        "cli": build_cli,
         "codex": build_codex,
         "package": package,
     }[args.stage](args)

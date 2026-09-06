@@ -19,7 +19,7 @@ concurrency:
 jobs:
   android-cli:
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       TERMUX_NDK_VERSION: "28.2.13676358"
@@ -33,9 +33,9 @@ jobs:
           targets: aarch64-linux-android
       - name: Install the pinned NDK
         run: '"${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager" "ndk;${TERMUX_NDK_VERSION}"'
-      - name: Check Android CLI and network probe without waiting for V8
+      - name: Build Android CLI and network probe without waiting for V8
         run: >-
-          python3 scripts/termux/build.py check-cli
+          python3 scripts/termux/build.py cli
           --work-dir "${RUNNER_TEMP}/termux-native"
           --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
           --jobs 4

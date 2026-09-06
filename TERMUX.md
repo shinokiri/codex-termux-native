@@ -8,13 +8,16 @@ independently. No third-party Codex fork patches or release binaries are used.
 
 This is a development branch, not an installable or device-validated release.
 
-[Focused CI at `9360a962`](https://github.com/shinokiri/codex-termux-native/actions/runs/34027445362)
-passed all 266 selected tests (plus one intentionally skipped subprocess
-fixture), Android lock/PTY API compilation, targeted Clippy, formatting and the
-Bazel lock check.
-[The Android CLI check at `4fd1a006`](https://github.com/shinokiri/codex-termux-native/actions/runs/34029827256)
-also passed with the pinned NDK and release configuration, including the network
-probe. Full linking and the V8 source build are separate gates.
+[Focused CI at `c58f4e8e`](https://github.com/shinokiri/codex-termux-native/actions/runs/34033146971)
+passed all 268 selected tests (plus one intentionally skipped subprocess
+fixture), four MCP credential fallback/deletion tests, Android lock/PTY/keyring
+API checks, the Android CLI and network-probe `cargo check`, targeted Clippy,
+formatting and the Bazel lock check.
+The [first Android source build](https://github.com/shinokiri/codex-termux-native/actions/runs/34026086815)
+completed its V8 compilation step, then failed during TUI code generation at
+Rust's default recursion limit. The Android TUI limit is now 256, as suggested
+by the compiler; its in-process app-server dependency already uses 256.
+The corrected full build and device execution remain separate gates.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
@@ -22,10 +25,25 @@ probe. Full linking and the V8 source build are separate gates.
 | OpenSSL | Android-only vendored build feature; CLI Android compilation passed | Final linking and device handshakes; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
-| V8 / code mode | Exact `v8 = 150.4.0` source build workflow, Android binding-header patch | Successful source build, native sandbox and code-mode execution |
+| V8 / code mode | Exact `v8 = 150.4.0` Android source compilation passed; Android binding-header patch | Full executable linking, V8 sandbox and code-mode execution on device |
 | PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
-| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshots resolve `env` through `PATH`; stdio MCP children inherit Termux execution variables | Targeted shell tests passed; full Android build and subprocess execution pending |
+| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshot v2 resolves `env` through `PATH`; stdio MCP children inherit Termux execution variables | Targeted shell tests passed; full Android build and subprocess execution pending |
 | Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
+| Process sandbox | Upstream has no Android process-sandbox backend | Permission and approval behavior on device; executor requests that require a sandbox are unsupported |
+
+The experimental `shell_snapshot_v2` feature is disabled by default in this
+upstream revision. Its environment capture now finds `env` through `PATH`,
+supporting Termux's prefix while bypassing same-named shell functions. A shell
+regression covers a prefix containing spaces and NUL-delimited multiline values.
+
+Codex's OS process sandbox is separate from V8's internal sandbox. The upstream
+platform selector returns no process-sandbox backend on Android. Local direct
+launches can consequently use `SandboxType::None`; a workspace or read-only
+profile alone does not establish OS enforcement. The exec-server path instead
+rejects explicit sandbox requests with `sandbox intent cannot be enforced on
+this executor`. This affects sandboxed snapshot-v2 launches when that feature
+is enabled. This branch retains upstream permission defaults and does not add
+an Android process-sandbox backend.
 
 The new file-lock crate preserves contention and real I/O errors. Unsupported
 filesystems do not silently receive permission to enter critical sections.
@@ -50,11 +68,16 @@ tests and the complete `just fmt` command on code changes, including build recip
 edits. It installs the formatter tools on its own runner and does not wait for
 the Android source build. The worktree must remain unchanged after formatting.
 
-The native-check workflow also runs `build.py check-cli` with the pinned Android
-NDK and the candidate's release configuration. It checks the CLI and network
-probe independently of V8: only the separate code-mode host links that library.
-This catches Android compiler errors in the CLI's dependencies while V8 builds;
-final linking, code-mode host execution and device networking remain separate checks.
+The native-check workflow also runs `build.py cli` with the pinned Android NDK
+and the candidate's release configuration. It builds and links the CLI and
+network probe independently of V8: only the separate code-mode host links that
+library. This gate uses `cargo build` because `cargo check` missed the initial
+TUI recursion-depth failure during code generation. Code-mode host linking and
+device execution remain separate checks.
+
+TUI changes additionally run the existing session-resume tests on Linux through
+`just test -p codex-tui --lib -E 'test(session_resume::tests::)'`. Android compiler
+settings are exercised by the independent native CLI build.
 
 ```sh
 just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store
