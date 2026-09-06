@@ -65,6 +65,16 @@ def assemble(root, destination, port_commit, tag, revision):
     subprocess.run(
         ["git", "apply", "--3way", "--index"], cwd=destination, input=patch, check=True
     )
+    # GITHUB_TOKEN cannot write workflows. Keep those files exactly as already
+    # reviewed on the controller commit, including removal of upstream-only files.
+    git(
+        destination,
+        "restore",
+        f"--source={port_commit}",
+        "--staged",
+        "--worktree",
+        ".github/workflows",
+    )
     align_workspace_versions(destination)
     (destination / "scripts/termux/upstream.json").write_text(
         json.dumps(
@@ -80,14 +90,21 @@ def assemble(root, destination, port_commit, tag, revision):
         + "\n"
     )
     git(destination, "add", ".")
-    git(
+    tree = git(destination, "write-tree")
+    commit = git(
         destination,
         "-c",
         "user.name=github-actions[bot]",
         "-c",
         "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-        "commit",
+        "commit-tree",
+        tree,
+        "-p",
+        port_commit,
         "-m",
         f"build(termux): adapt official {tag} (revision {revision})",
     )
-    return git(destination, "rev-parse", "HEAD")
+    # The source tree came from the exact tag; parenting it to the controller
+    # avoids introducing that tag's unrelated workflow history on the new branch.
+    git(destination, "reset", "--soft", commit)
+    return commit

@@ -51,10 +51,12 @@ updates` workflow implements the release pipeline:
    verify their digests, then publish it as the latest Termux release. Failures
    leave the previous published release available to clients.
 
-The source branches omit our workflow files: the pipeline uses the reviewed
-workflows on the development branch and checks out the immutable source commit
-for each job. `BUILD-INFO.json` records that source commit; the Actions run's
-head commit identifies the pipeline and adaptation recipe instead.
+The source branches keep the controller's reviewed workflow files unchanged;
+the built-in CI token cannot write workflows. Their product source is the exact
+official tag plus our Android delta, but their Git parent is the controller
+commit so the push does not import upstream workflow history. Each job checks
+out the immutable prepared source. `BUILD-INFO.json` records that source commit
+and the official tag's commit; the Actions run's head identifies the controller.
 
 GitHub does not send an upstream repository's `release` event to a fork.
 The workflow therefore checks published releases every five minutes and also
@@ -70,6 +72,8 @@ input; an existing prepared source branch is reused on retry. To publish a new
 Termux fix for the same official version, increase the `revision` input. Published
 release assets are not replaced. Source conflicts and failed CI require a fix
 before that version can reach clients.
+Pushing a change to the release controller also retries the current attempt;
+unchanged scheduled checks do not.
 
 ## Client update experience
 

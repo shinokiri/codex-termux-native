@@ -3,7 +3,10 @@ name: Termux release updates
 on:
   push:
     branches: ["termux/native"]
-    paths: [".github/workflows/termux-release.yml"]
+    paths:
+      - ".github/workflows/termux-release.yml"
+      - "scripts/termux/release.py"
+      - "scripts/termux/release_source.py"
   workflow_dispatch:
     inputs:
       revision:
@@ -50,7 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TERMUX_RELEASE_REVISION: ${{ inputs.revision || '1' }}
-          TERMUX_RELEASE_RETRY: ${{ inputs.retry || 'false' }}
+          TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
           if [ "$TERMUX_RELEASE_RETRY" = "true" ]; then options+=(--retry); fi
