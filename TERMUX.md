@@ -13,9 +13,10 @@ This is a development branch, not an installable or device-validated release.
 | File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
 | OpenSSL | Android-only vendored build feature | Full cross compilation; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
-| TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle | Device HTTPS and WSS roots; custom-root rejection tests in CI |
+| TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
 | V8 / code mode | Exact `v8 = 150.4.0` source build workflow, Android binding-header patch | Successful source build, native sandbox and code-mode execution |
-| PTY and child tools | Android provides `openpty` since API 23; no replacement added | Link verification, interactive shell, resize, interrupt, MCP subprocess environment |
+| PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
+| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; stdio MCP children inherit Termux execution variables | Targeted shell tests, full Android build and subprocess execution |
 
 The new file-lock crate preserves contention and real I/O errors. Unsupported
 filesystems do not silently receive permission to enter critical sections.
@@ -43,6 +44,15 @@ just fix -p codex-utils-file-lock --locked
 just fmt
 just bazel-lock-update
 ```
+
+The HTTP tests include both successful custom-CA handshakes and rejection of
+malformed or empty CA files. A real certificate-error test exposed a nested
+`io::Error` classification bug, which this branch fixes without changing trust.
+Five Native-TLS-to-Rustls fallback tests also failed on the unmodified official
+baseline. Diagnostic execution showed custom-CA configuration was being
+introduced between the outer shell and test process. The check workflow now
+scrubs those CA variables at the test-process boundary; this does not affect
+Codex's runtime environment or custom-CA support.
 
 ## Reference audit
 
@@ -85,3 +95,20 @@ used for WebSocket clients without an explicit HTTP proxy. It uses no account
 credentials. A full WebSocket upgrade, login, sessions, code mode and subprocess
 execution still require separate device checks. Normal CA verification stays
 enabled; the port does not hard-code a DNS service or disable TLS verification.
+
+## Device smoke check
+
+Once a candidate exists, the optional Python 3.10+ script runs its CLI and actual
+code-mode host in a temporary directory, without an account or model calls:
+
+```sh
+python scripts/termux_smoke.py /path/to/codex-termux-native
+# Additionally exercise Android DNS and verified TLS through the current TUN:
+python scripts/termux_smoke.py /path/to/codex-termux-native --network
+```
+
+The script checks JavaScript execution, a Promise, a stored value across two
+cells and clean host shutdown. The script itself still needs validation with
+the candidate. Python is only a dependency of this optional check, not the CLI.
+This does not test the interactive UI, MCP servers, account login or session
+resume, and does not install the package or alter conversation archives.

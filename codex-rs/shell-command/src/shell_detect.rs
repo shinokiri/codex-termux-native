@@ -58,7 +58,7 @@ pub fn detect_shell_type(shell_path: impl AsRef<std::path::Path>) -> Option<Shel
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "android")))]
 fn get_user_shell_path() -> Option<PathBuf> {
     let uid = unsafe { libc::getuid() };
     use std::ffi::CStr;
@@ -117,6 +117,21 @@ fn get_user_shell_path() -> Option<PathBuf> {
         }
         buffer.resize(new_len, 0);
     }
+}
+
+#[cfg(target_os = "android")]
+fn get_user_shell_path() -> Option<PathBuf> {
+    // Bionic's synthetic passwd entry does not describe the Termux login shell.
+    android_user_shell_path(std::env::var_os("SHELL"))
+}
+
+#[cfg(any(target_os = "android", all(test, unix)))]
+fn android_user_shell_path(shell: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let shell = PathBuf::from(shell?);
+    if !shell.is_absolute() || detect_shell_type(&shell).is_none() {
+        return None;
+    }
+    which::which(shell).ok()
 }
 
 #[cfg(not(unix))]
@@ -237,7 +252,10 @@ fn get_bash_shell() -> Option<DetectedShell> {
     })
 }
 
+#[cfg(not(target_os = "android"))]
 const SH_FALLBACK_PATHS: &[&str] = &["/bin/sh"];
+#[cfg(target_os = "android")]
+const SH_FALLBACK_PATHS: &[&str] = &["/system/bin/sh"];
 
 fn get_sh_shell() -> Option<DetectedShell> {
     let shell_path = get_shell_path(ShellType::Sh, "sh", SH_FALLBACK_PATHS);
@@ -318,6 +336,11 @@ pub fn ultimate_fallback_shell() -> DetectedShell {
             shell_type: ShellType::Cmd,
             shell_path: PathBuf::from("cmd.exe"),
         }
+    } else if cfg!(target_os = "android") {
+        DetectedShell {
+            shell_type: ShellType::Sh,
+            shell_path: PathBuf::from("/system/bin/sh"),
+        }
     } else {
         DetectedShell {
             shell_type: ShellType::Sh,
@@ -368,6 +391,10 @@ pub fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Detecte
         shell_with_fallback.unwrap_or_else(ultimate_fallback_shell)
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "shell_detect_android_tests.rs"]
+mod android_tests;
 
 #[cfg(test)]
 mod tests {

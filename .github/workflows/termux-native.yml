@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      # Scrub at the test-process boundary: Cargo/nextest may set SSL_CERT_FILE
+      # after the outer shell was scrubbed, selecting custom-CA Rustls instead.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: "env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -41,7 +44,7 @@ jobs:
         continue-on-error: true
         run: |
           python3 -c 'import os; print({name: bool(os.environ.get(name)) for name in ("CODEX_CA_CERTIFICATE", "SSL_CERT_FILE", "SSL_CERT_DIR")})'
-          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client
+          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command
       - name: Diagnose TLS feature selection after a test failure
         if: steps.tests.outcome == 'failure'
         working-directory: codex-rs
@@ -78,7 +81,7 @@ jobs:
         working-directory: codex-rs
         run: cargo check --locked -p codex-utils-file-lock -p codex-utils-pty --tests --target aarch64-linux-android
       - name: Apply targeted Clippy fixes
-        run: just fix -p codex-utils-file-lock -p codex-http-client --locked --examples
+        run: just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command --locked --examples
       - name: Format repository
         run: just fmt
       - name: Check generated changes
