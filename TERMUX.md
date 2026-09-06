@@ -126,7 +126,13 @@ rewrites process-wide proxy or dynamic-library environment variables. The
 development build strips symbols and disables release LTO to limit build cost.
 Only the two delivered binaries and the probe are selected for compilation;
 unrelated CLI binaries such as `logs_client` are not built. V8 builds use Cargo's
-verbose mode to expose Ninja progress. Preparation can be rerun with the same
+verbose mode to expose Ninja progress, including completed and running tasks
+and elapsed seconds. The public Linux runner uses four compile jobs for V8 and
+Codex and prints its CPU, memory and free disk resources before the build.
+The upgraded workflow has its own concurrency group so it can run alongside
+the initial bootstrap; later pushes to this branch still share one queue.
+Changing job counts or progress logging does not invalidate the V8 cache because
+the compiler configuration is unchanged. Preparation can be rerun with the same
 patch, and repackaging replaces staged copies without deleting compiler outputs.
 
 The build uploads the compressed candidate and checksum, retained for three

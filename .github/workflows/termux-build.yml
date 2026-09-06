@@ -15,7 +15,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: termux-build-${{ github.ref }}
+  # Let the current recipe start alongside the original bootstrap build.
+  # Later pushes still share one queue instead of starting a build per commit.
+  group: termux-build-current-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,6 +27,9 @@ jobs:
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       TERMUX_NDK_VERSION: "28.2.13676358"
+      # Standard public Linux runners have 4 CPUs and 16 GB RAM.
+      TERMUX_BUILD_JOBS: "4"
+      NINJA_STATUS: "[%f/%t %p, %r running, %es elapsed] "
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -43,6 +48,8 @@ jobs:
         run: |
           "${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager" "ndk;${TERMUX_NDK_VERSION}" "platforms;android-37.0" "build-tools;37.0.0"
           test -x "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          nproc
+          free -h
           df -h "${RUNNER_TEMP}"
       - name: Check out pinned V8 sources and Android dependencies
         run: >-
@@ -72,6 +79,7 @@ jobs:
           python3 scripts/termux/build.py v8
           --work-dir "${RUNNER_TEMP}/termux-native"
           --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
+          --jobs "${TERMUX_BUILD_JOBS}"
       - name: Retain only the reusable V8 pair and its checksums
         if: steps.v8-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -87,6 +95,7 @@ jobs:
           python3 scripts/termux/build.py codex
           --work-dir "${RUNNER_TEMP}/termux-native"
           --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
+          --jobs "${TERMUX_BUILD_JOBS}"
       - name: Check ELF dependencies and package candidate
         run: >-
           python3 scripts/termux/build.py package
