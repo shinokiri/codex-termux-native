@@ -20,9 +20,7 @@ pub fn installed_version(context: &InstallContext, cli_version: &str) -> String 
     context
         .package_layout
         .as_ref()
-        .and_then(|layout| {
-            std::fs::read_to_string(layout.package_dir.join("BUILD-INFO.json")).ok()
-        })
+        .and_then(|layout| std::fs::read_to_string(layout.package_dir.join("BUILD-INFO.json")).ok())
         .and_then(|contents| serde_json::from_str::<PackageBuildInfo>(&contents).ok())
         .and_then(|info| info.release_version)
         .unwrap_or_else(|| cli_version.to_owned())
