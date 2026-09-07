@@ -7,18 +7,19 @@ use rand::rngs::SmallRng;
 use serde::Serialize;
 use std::ffi::OsStr;
 use std::ffi::c_void;
-use std::fs::File;
 use std::io::Write;
-use std::os::windows::io::FromRawHandle;
 use std::path::Path;
 use std::path::PathBuf;
+use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
 use windows_sys::Win32::Foundation::GENERIC_WRITE;
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::Foundation::LocalFree;
+use windows_sys::Win32::NetworkManagement::NetManagement::LOCALGROUP_INFO_1;
 use windows_sys::Win32::NetworkManagement::NetManagement::LOCALGROUP_MEMBERS_INFO_3;
 use windows_sys::Win32::NetworkManagement::NetManagement::NERR_Success;
+use windows_sys::Win32::NetworkManagement::NetManagement::NetLocalGroupAdd;
 use windows_sys::Win32::NetworkManagement::NetManagement::NetLocalGroupAddMembers;
 use windows_sys::Win32::NetworkManagement::NetManagement::NetUserAdd;
 use windows_sys::Win32::NetworkManagement::NetManagement::NetUserSetInfo;
@@ -30,6 +31,9 @@ use windows_sys::Win32::NetworkManagement::NetManagement::USER_PRIV_USER;
 use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
 use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
 use windows_sys::Win32::Security::Authorization::SDDL_REVISION_1;
+use windows_sys::Win32::Security::CopySid;
+use windows_sys::Win32::Security::GetLengthSid;
+use windows_sys::Win32::Security::LookupAccountNameW;
 use windows_sys::Win32::Security::LookupAccountSidW;
 use windows_sys::Win32::Security::PSECURITY_DESCRIPTOR;
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
@@ -38,79 +42,63 @@ use windows_sys::Win32::Storage::FileSystem::CREATE_NEW;
 use windows_sys::Win32::Storage::FileSystem::CreateFileW;
 use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 
-use codex_windows_sandbox::SANDBOX_USERS_GROUP;
 use codex_windows_sandbox::SETUP_VERSION;
 use codex_windows_sandbox::SetupErrorCode;
 use codex_windows_sandbox::SetupFailure;
 use codex_windows_sandbox::dpapi_protect;
-use codex_windows_sandbox::ensure_sandbox_users_group;
-use codex_windows_sandbox::resolve_sid;
 use codex_windows_sandbox::sandbox_dir;
 use codex_windows_sandbox::sandbox_secrets_dir;
 use codex_windows_sandbox::string_from_sid_bytes;
 use codex_windows_sandbox::to_wide;
-use codex_windows_sandbox::write_file_atomically;
 
-use super::SetupMode;
-
+pub const SANDBOX_USERS_GROUP: &str = "CodexSandboxUsers";
+const SANDBOX_USERS_GROUP_COMMENT: &str = "Codex sandbox internal group (managed)";
+const SID_ADMINISTRATORS: &str = "S-1-5-32-544";
 const SID_USERS: &str = "S-1-5-32-545";
+const SID_AUTHENTICATED_USERS: &str = "S-1-5-11";
+const SID_EVERYONE: &str = "S-1-1-0";
+const SID_SYSTEM: &str = "S-1-5-18";
+
+pub fn ensure_sandbox_users_group(log: &mut dyn Write) -> Result<()> {
+    ensure_local_group(SANDBOX_USERS_GROUP, SANDBOX_USERS_GROUP_COMMENT, log)
+}
 
 pub fn resolve_sandbox_users_group_sid() -> Result<Vec<u8>> {
     resolve_sid(SANDBOX_USERS_GROUP)
 }
 
-pub(super) fn provision_sandbox_users(
+pub fn provision_sandbox_users(
     codex_home: &Path,
     offline_username: &str,
     online_username: &str,
-    new_user_flags: u32,
     log: &mut dyn Write,
-    mode: SetupMode,
 ) -> Result<()> {
-    if let Err(err) = ensure_sandbox_users_group() {
-        let message = format!("failed to create local group {SANDBOX_USERS_GROUP}: {err}");
-        super::log_line(log, &message)?;
-        return Err(anyhow::Error::new(SetupFailure::new(
-            SetupErrorCode::HelperUsersGroupCreateFailed,
-            message,
-        )));
-    }
+    ensure_sandbox_users_group(log)?;
     super::log_line(
         log,
         &format!("ensuring sandbox users offline={offline_username} online={online_username}"),
     )?;
     let offline_password = random_password();
     let online_password = random_password();
-    ensure_sandbox_user(offline_username, &offline_password, new_user_flags, log)?;
-    ensure_sandbox_user(online_username, &online_password, new_user_flags, log)?;
+    ensure_sandbox_user(offline_username, &offline_password, log)?;
+    ensure_sandbox_user(online_username, &online_password, log)?;
     write_secrets(
         codex_home,
         offline_username,
         &offline_password,
         online_username,
         &online_password,
-        mode,
     )?;
     Ok(())
 }
 
-pub fn ensure_sandbox_user(
-    username: &str,
-    password: &str,
-    new_user_flags: u32,
-    log: &mut dyn Write,
-) -> Result<()> {
-    ensure_local_user(username, password, new_user_flags, log)?;
+pub fn ensure_sandbox_user(username: &str, password: &str, log: &mut dyn Write) -> Result<()> {
+    ensure_local_user(username, password, log)?;
     ensure_local_group_member(SANDBOX_USERS_GROUP, username)?;
     Ok(())
 }
 
-pub fn ensure_local_user(
-    name: &str,
-    password: &str,
-    new_user_flags: u32,
-    log: &mut dyn Write,
-) -> Result<()> {
+pub fn ensure_local_user(name: &str, password: &str, log: &mut dyn Write) -> Result<()> {
     let name_w = to_wide(OsStr::new(name));
     let pwd_w = to_wide(OsStr::new(password));
     unsafe {
@@ -121,7 +109,7 @@ pub fn ensure_local_user(
             usri1_priv: USER_PRIV_USER,
             usri1_home_dir: std::ptr::null_mut(),
             usri1_comment: std::ptr::null_mut(),
-            usri1_flags: UF_SCRIPT | UF_DONT_EXPIRE_PASSWD | new_user_flags,
+            usri1_flags: UF_SCRIPT | UF_DONT_EXPIRE_PASSWD,
             usri1_script_path: std::ptr::null_mut(),
         };
         let status = NetUserAdd(
@@ -174,6 +162,38 @@ pub fn ensure_local_user(
     Ok(())
 }
 
+pub fn ensure_local_group(name: &str, comment: &str, log: &mut dyn Write) -> Result<()> {
+    const ERROR_ALIAS_EXISTS: u32 = 1379;
+    const NERR_GROUP_EXISTS: u32 = 2223;
+
+    let name_w = to_wide(OsStr::new(name));
+    let comment_w = to_wide(OsStr::new(comment));
+    unsafe {
+        let info = LOCALGROUP_INFO_1 {
+            lgrpi1_name: name_w.as_ptr() as *mut u16,
+            lgrpi1_comment: comment_w.as_ptr() as *mut u16,
+        };
+        let mut parm_err: u32 = 0;
+        let status = NetLocalGroupAdd(
+            std::ptr::null(),
+            1,
+            &info as *const _ as *mut u8,
+            &mut parm_err as *mut _,
+        );
+        if status != NERR_Success && status != ERROR_ALIAS_EXISTS && status != NERR_GROUP_EXISTS {
+            super::log_line(
+                log,
+                &format!("NetLocalGroupAdd failed for {name} code {status} parm_err={parm_err}"),
+            )?;
+            return Err(anyhow::Error::new(SetupFailure::new(
+                SetupErrorCode::HelperUsersGroupCreateFailed,
+                format!("failed to create local group {name}, code {status}"),
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn ensure_local_group_member(group_name: &str, member_name: &str) -> Result<()> {
     // If the member is already in the group, NetLocalGroupAddMembers may
     // return an error code. We don't care.
@@ -192,6 +212,82 @@ pub fn ensure_local_group_member(group_name: &str, member_name: &str) -> Result<
         );
     }
     Ok(())
+}
+
+pub fn resolve_sid(name: &str) -> Result<Vec<u8>> {
+    if let Some(sid_str) = well_known_sid_str(name) {
+        return sid_bytes_from_string(sid_str);
+    }
+    let name_w = to_wide(OsStr::new(name));
+    let mut sid_buffer = vec![0u8; 68];
+    let mut sid_len: u32 = sid_buffer.len() as u32;
+    let mut domain: Vec<u16> = Vec::new();
+    let mut domain_len: u32 = 0;
+    let mut use_type: SID_NAME_USE = 0;
+    loop {
+        let ok = unsafe {
+            LookupAccountNameW(
+                std::ptr::null(),
+                name_w.as_ptr(),
+                sid_buffer.as_mut_ptr() as *mut c_void,
+                &mut sid_len,
+                domain.as_mut_ptr(),
+                &mut domain_len,
+                &mut use_type,
+            )
+        };
+        if ok != 0 {
+            sid_buffer.truncate(sid_len as usize);
+            return Ok(sid_buffer);
+        }
+        let err = unsafe { GetLastError() };
+        if err == ERROR_INSUFFICIENT_BUFFER {
+            sid_buffer.resize(sid_len as usize, 0);
+            domain.resize(domain_len as usize, 0);
+            continue;
+        }
+        return Err(anyhow::anyhow!(
+            "LookupAccountNameW failed for {name}: {err}"
+        ));
+    }
+}
+
+fn well_known_sid_str(name: &str) -> Option<&'static str> {
+    match name {
+        "Administrators" => Some(SID_ADMINISTRATORS),
+        "Users" => Some(SID_USERS),
+        "Authenticated Users" => Some(SID_AUTHENTICATED_USERS),
+        "Everyone" => Some(SID_EVERYONE),
+        "SYSTEM" => Some(SID_SYSTEM),
+        _ => None,
+    }
+}
+
+fn sid_bytes_from_string(sid_str: &str) -> Result<Vec<u8>> {
+    let sid_w = to_wide(OsStr::new(sid_str));
+    let mut psid: *mut c_void = std::ptr::null_mut();
+    if unsafe { ConvertStringSidToSidW(sid_w.as_ptr(), &mut psid) } == 0 {
+        return Err(anyhow::anyhow!(
+            "ConvertStringSidToSidW failed for {sid_str}: {}",
+            unsafe { GetLastError() }
+        ));
+    }
+    let sid_len = unsafe { GetLengthSid(psid) };
+    if sid_len == 0 {
+        unsafe {
+            LocalFree(psid as _);
+        }
+        return Err(anyhow::anyhow!("GetLengthSid failed for {sid_str}"));
+    }
+    let mut out = vec![0u8; sid_len as usize];
+    let ok = unsafe { CopySid(sid_len, out.as_mut_ptr() as *mut c_void, psid) };
+    unsafe {
+        LocalFree(psid as _);
+    }
+    if ok == 0 {
+        return Err(anyhow::anyhow!("CopySid failed for {sid_str}"));
+    }
+    Ok(out)
 }
 
 fn lookup_account_name_for_sid(sid_str: &str) -> Result<String> {
@@ -312,7 +408,6 @@ fn write_secrets(
     offline_pwd: &str,
     online_user: &str,
     online_pwd: &str,
-    mode: SetupMode,
 ) -> Result<()> {
     let secrets_dir = sandbox_secrets_dir(codex_home);
     std::fs::create_dir_all(&secrets_dir).map_err(|err| {
@@ -354,13 +449,7 @@ fn write_secrets(
             format!("serialize sandbox users failed: {err}"),
         ))
     })?;
-    let write_result = match mode {
-        SetupMode::ProvisionOnly => write_file_atomically(&users_path, &users_json),
-        SetupMode::Full | SetupMode::InteractiveProvision | SetupMode::ReadAclsOnly => {
-            std::fs::write(&users_path, users_json).map_err(anyhow::Error::from)
-        }
-    };
-    write_result.map_err(|err| {
+    std::fs::write(&users_path, users_json).map_err(|err| {
         anyhow::Error::new(SetupFailure::new(
             SetupErrorCode::HelperUsersFileWriteFailed,
             format!(
@@ -372,19 +461,11 @@ fn write_secrets(
     Ok(())
 }
 
-/// Service provisioning retains the marker's exclusive handle; legacy setup reopens it at commit.
-pub(super) enum PreparedSetupMarker {
-    Retained(File),
-    Reopen,
-}
-
-// Create the final marker with its protected ACL. The empty file intentionally fails readiness
-// checks until setup succeeds. Only service provisioning pins it for the entire operation.
-pub(super) fn prepare_setup_marker(
-    codex_home: &Path,
-    real_user: &str,
-    mode: SetupMode,
-) -> Result<PreparedSetupMarker> {
+// Create the final marker path with its protected ACL before provisioning begins. The empty file
+// intentionally fails readiness checks while setup is in progress, and sandbox users cannot read,
+// modify, or replace it. Once every setup step succeeds, `commit_setup_marker` writes the valid
+// marker contents without changing the file's ACL.
+pub(super) fn prepare_setup_marker(codex_home: &Path, real_user: &str) -> Result<()> {
     let marker_path = sandbox_dir(codex_home).join("setup_marker.json");
     match std::fs::remove_file(&marker_path) {
         Ok(()) => {}
@@ -461,18 +542,13 @@ pub(super) fn prepare_setup_marker(
             ),
         )));
     }
-    let file = unsafe { File::from_raw_handle(marker_handle as *mut c_void) };
-    match mode {
-        SetupMode::ProvisionOnly => Ok(PreparedSetupMarker::Retained(file)),
-        SetupMode::Full | SetupMode::InteractiveProvision | SetupMode::ReadAclsOnly => {
-            drop(file);
-            Ok(PreparedSetupMarker::Reopen)
-        }
+    unsafe {
+        CloseHandle(marker_handle);
     }
+    Ok(())
 }
 
 pub(super) fn commit_setup_marker(
-    file: PreparedSetupMarker,
     codex_home: &Path,
     offline_user: &str,
     online_user: &str,
@@ -496,11 +572,7 @@ pub(super) fn commit_setup_marker(
             format!("serialize setup marker failed: {err}"),
         ))
     })?;
-    let write_result = match file {
-        PreparedSetupMarker::Retained(mut file) => file.write_all(&marker_json),
-        PreparedSetupMarker::Reopen => std::fs::write(&marker_path, marker_json),
-    };
-    write_result.map_err(|err| {
+    std::fs::write(&marker_path, marker_json).map_err(|err| {
         anyhow::Error::new(SetupFailure::new(
             SetupErrorCode::HelperSetupMarkerWriteFailed,
             format!(

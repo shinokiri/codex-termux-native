@@ -199,9 +199,7 @@ async fn disconnected_command_center_keeps_input_and_blocks_actions() -> Result<
     };
     let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
     app.chat_widget.show_bottom_pane_view(Box::new(view));
-    app.chat_widget.handle_paste("task draft".into());
-    app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.agents_overview.view_state.lock().unwrap().input = "task draft".into();
     let mut tui = crate::tui::test_support::make_test_tui()?;
     app.handle_tui_event(
         &mut tui,
@@ -220,7 +218,6 @@ async fn disconnected_command_center_keeps_input_and_blocks_actions() -> Result<
         KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
         KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
         KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
-        KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
     ] {
         app.handle_tui_event(&mut tui, &mut session, TuiEvent::Key(key))
             .await?;
@@ -234,21 +231,12 @@ async fn disconnected_command_center_keeps_input_and_blocks_actions() -> Result<
     )
     .await?;
     assert_eq!(
-        app.agents_overview
-            .view_state
-            .lock()
-            .unwrap()
-            .composer
-            .as_ref()
-            .unwrap()
-            .current_text_with_pending(),
+        app.agents_overview.view_state.lock().unwrap().input,
         "task draft!"
     );
     assert!(
-        !std::iter::from_fn(|| events.try_recv().ok()).any(|event| matches!(
-            event,
-            AppEvent::DispatchAgentsOverviewTask { .. } | AppEvent::OpenResumePicker
-        ))
+        !std::iter::from_fn(|| events.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::DispatchAgentsOverviewTask { .. }))
     );
     assert_snapshot!(
         "offline_command_center",
@@ -281,7 +269,6 @@ where
                 Some(json!({"result": {"account": null, "requiresOpenaiAuth": false}}))
             }
             "model/list" => Some(json!({"result": {"data": [], "nextCursor": null}})),
-            "collaborationMode/list" => Some(json!({"result": {"data": []}})),
             "configRequirements/read" => Some(json!({"result": {"requirements": null}})),
             _ => respond(request).await,
         };
@@ -322,7 +309,6 @@ async fn lost_initial_thread_reply_keeps_startup_draft_offline() -> Result<()> {
         );
         let result = crate::app_server_session::start_thread_with_request_handle(
             session.request_handle(),
-            &app.local_settings,
             app.config.clone(),
             ThreadParamsMode::Remote,
             /*remote_cwd_override*/ None,

@@ -6,7 +6,6 @@
 //! slash-command recall follows the same submitted-input rule as ordinary text.
 
 use super::*;
-use crate::app_event::ManagedWorktreeMode;
 use crate::app_event::ThreadGoalSetMode;
 use crate::bottom_pane::prompt_args::parse_slash_name;
 use crate::bottom_pane::slash_commands::BuiltinCommandFlags;
@@ -54,7 +53,6 @@ impl ChatWidget {
     }
 
     pub(super) fn handle_service_tier_command_dispatch(&mut self, command: ServiceTierCommand) {
-        self.transcript.last_status_copy_targets = None;
         if self.active_side_conversation {
             self.add_error_message(format!(
                 "'/{}' is unavailable in side conversations. {SIDE_SLASH_COMMAND_UNAVAILABLE_HINT}",
@@ -147,9 +145,6 @@ impl ChatWidget {
     }
 
     pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
-        if cmd != SlashCommand::Copy {
-            self.transcript.last_status_copy_targets = None;
-        }
         if !self.ensure_slash_command_allowed_in_side_conversation(cmd) {
             return;
         }
@@ -182,7 +177,7 @@ impl ChatWidget {
                 self.request_redraw();
             }
             SlashCommand::New => {
-                self.show_session_checkout_picker(ManagedWorktreeMode::New, /*name*/ None);
+                self.app_event_tx.send(AppEvent::NewSession { name: None });
             }
             SlashCommand::Archive => {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
@@ -248,10 +243,8 @@ impl ChatWidget {
                 self.app_event_tx.send(AppEvent::OpenResumePicker);
             }
             SlashCommand::Fork => {
-                self.show_session_checkout_picker(ManagedWorktreeMode::Fork, /*name*/ None);
-            }
-            SlashCommand::Worktree => {
-                self.show_managed_worktree_picker();
+                self.app_event_tx
+                    .send(AppEvent::ForkCurrentSession { name: None });
             }
             SlashCommand::App => {
                 let Some(thread_id) = self.thread_id else {
@@ -276,13 +269,6 @@ impl ChatWidget {
                 if !self.bottom_pane.is_task_running() {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
-                self.bottom_pane.ensure_status_indicator();
-                self.set_status(
-                    compaction::COMPACTION_HEADER.to_string(),
-                    Some(compaction::COMPACTION_DETAILS.to_string()),
-                    StatusDetailsCapitalization::Preserve,
-                    STATUS_DETAILS_DEFAULT_MAX_LINES,
-                );
                 self.input_queue.user_turn_pending_start = true;
                 self.app_event_tx.compact();
             }
@@ -343,11 +329,7 @@ impl ChatWidget {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
             }
             SlashCommand::Permissions => {
-                if self.remote_connection.is_some() {
-                    self.app_event_tx.send(AppEvent::OpenPermissionsPopup);
-                } else {
-                    self.open_permissions_popup();
-                }
+                self.open_permissions_popup();
                 self.defer_input_until_settings_applied();
             }
             SlashCommand::Vim => {
@@ -603,9 +585,6 @@ impl ChatWidget {
         args: String,
         text_elements: Vec<TextElement>,
     ) {
-        if cmd != SlashCommand::Copy {
-            self.transcript.last_status_copy_targets = None;
-        }
         if !self.ensure_slash_command_allowed_in_side_conversation(cmd) {
             return;
         }
@@ -720,9 +699,6 @@ impl ChatWidget {
         cmd: SlashCommand,
         prepared: PreparedSlashCommandArgs,
     ) {
-        if cmd != SlashCommand::Copy {
-            self.transcript.last_status_copy_targets = None;
-        }
         let PreparedSlashCommandArgs {
             args,
             text_elements,
@@ -767,8 +743,7 @@ impl ChatWidget {
             SlashCommand::Keymap => match trimmed.to_ascii_lowercase().as_str() {
                 "" => self.open_keymap_picker(),
                 "debug" => {
-                    match crate::keymap::RuntimeKeymap::from_config(&self.local_settings.tui.keymap)
-                    {
+                    match crate::keymap::RuntimeKeymap::from_config(&self.config.tui_keymap) {
                         Ok(runtime_keymap) => self.open_keymap_debug(&runtime_keymap),
                         Err(err) => {
                             self.add_error_message(format!(
@@ -803,10 +778,9 @@ impl ChatWidget {
                 self.app_event_tx.set_thread_name(name);
             }
             SlashCommand::New if !trimmed.is_empty() => {
-                self.show_session_checkout_picker(
-                    ManagedWorktreeMode::New,
-                    Some(trimmed.to_string()),
-                );
+                self.app_event_tx.send(AppEvent::NewSession {
+                    name: Some(trimmed.to_string()),
+                });
             }
             SlashCommand::Clear if !trimmed.is_empty() => {
                 self.app_event_tx.send(AppEvent::ClearUi {
@@ -814,13 +788,14 @@ impl ChatWidget {
                 });
             }
             SlashCommand::Fork if !trimmed.is_empty() => {
-                self.show_session_checkout_picker(
-                    ManagedWorktreeMode::Fork,
-                    Some(trimmed.to_string()),
-                );
+                self.app_event_tx.send(AppEvent::ForkCurrentSession {
+                    name: Some(trimmed.to_string()),
+                });
             }
             SlashCommand::Plan if !trimmed.is_empty() => {
-                let plan_available = self.apply_plan_slash_command();
+                if !self.apply_plan_slash_command() {
+                    return;
+                }
                 let mut user_message = self.prepared_inline_user_message(
                     args,
                     text_elements,
@@ -829,8 +804,7 @@ impl ChatWidget {
                     mention_bindings,
                     source,
                 );
-                if !plan_available
-                    || !self.is_session_configured()
+                if !self.is_session_configured()
                     || self.current_model().trim().is_empty()
                     || (!self.current_model_supports_images()
                         && (!user_message.local_images.is_empty()
@@ -842,10 +816,6 @@ impl ChatWidget {
                         element.byte_range.start += PLAN_PREFIX.len();
                         element.byte_range.end += PLAN_PREFIX.len();
                     }
-                }
-                if !plan_available {
-                    self.restore_user_message_to_composer(user_message);
-                    return;
                 }
                 if self.is_session_configured() {
                     self.reasoning_buffer.clear();
@@ -1144,8 +1114,6 @@ impl ChatWidget {
             goal_command_enabled: self.config.features.enabled(Feature::Goals),
             service_tier_commands_enabled: self.fast_mode_enabled(),
             personality_command_enabled: self.config.features.enabled(Feature::Personality),
-            worktrees_enabled: self.config.features.enabled(Feature::Worktrees)
-                && self.local_worktree_operations,
             allow_elevate_sandbox,
             side_conversation_active: self.active_side_conversation,
         }
@@ -1189,13 +1157,6 @@ impl ChatWidget {
                 Some(thread_id) if self.can_change_working_directory(thread_id) => QueueDrain::Stop,
                 _ => QueueDrain::Continue,
             },
-            SlashCommand::Worktree => {
-                if self.managed_worktree_available() {
-                    QueueDrain::Stop
-                } else {
-                    QueueDrain::Continue
-                }
-            }
             SlashCommand::Feedback
             | SlashCommand::Export
             | SlashCommand::New

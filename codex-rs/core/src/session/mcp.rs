@@ -255,21 +255,6 @@ impl Session {
         }
     }
 
-    /// Refreshes Apps tools on the published thread runtime and returns that client's snapshot.
-    pub(crate) async fn refresh_codex_apps_tools(
-        self: &Arc<Self>,
-    ) -> anyhow::Result<codex_mcp::CodexAppsToolSnapshot> {
-        // Reconcile unchanged config so failed or closed clients can be replaced.
-        self.mark_mcp_runtime_dirty();
-        self.refresh_mcp_if_dirty().await;
-        let _refresh = self
-            .mcp_refresh
-            .acquire()
-            .await
-            .map_err(|_| anyhow::anyhow!("MCP runtime refresh semaphore closed"))?;
-        self.services.mcp_runtime.refresh_codex_apps_tools().await
-    }
-
     /// Reconnects the runtime so refreshed Apps tools belong to their new exact client.
     pub(crate) async fn hard_refresh_latest_codex_apps_tools(
         self: &Arc<Self>,
@@ -344,7 +329,6 @@ impl Session {
         turn_context: &TurnContext,
         selected_capability_roots: &[ResolvedSelectedCapabilityRoot],
         required_servers: &[String],
-        required_plugins: &HashSet<String>,
     ) -> Arc<codex_mcp::McpBinding> {
         let ready_selected_capability_roots =
             Self::ready_selected_capability_roots(selected_capability_roots);
@@ -381,7 +365,7 @@ impl Session {
         if let Some(binding) = self
             .services
             .mcp_runtime
-            .current_binding_with_requirements(&required_servers, required_plugins)
+            .current_binding_with_required_servers(&required_servers)
             .await
         {
             return binding;

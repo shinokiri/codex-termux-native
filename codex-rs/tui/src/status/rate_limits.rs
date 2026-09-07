@@ -95,8 +95,6 @@ impl RateLimitWindowDisplay {
 pub(crate) struct RateLimitSnapshotDisplay {
     /// Canonical limit identifier (for example: `codex` or `codex_other`).
     pub limit_name: String,
-    /// Optional normal model associated with this account-read quota alias.
-    pub normal_model_slug: Option<String>,
     /// Local timestamp representing when this display snapshot was captured.
     pub captured_at: DateTime<Local>,
     /// Primary usage window.
@@ -149,7 +147,6 @@ pub(crate) fn rate_limit_snapshot_display_for_limit(
     captured_at: DateTime<Local>,
 ) -> RateLimitSnapshotDisplay {
     RateLimitSnapshotDisplay {
-        normal_model_slug: snapshot.normal_model_slug.clone(),
         limit_name,
         captured_at,
         primary: snapshot
@@ -219,19 +216,7 @@ pub(crate) fn compose_rate_limit_data_many(
     let mut rows = Vec::with_capacity(snapshots.len().saturating_mul(3));
     let mut stale = false;
 
-    // Show ordinary plan usage before model-specific quotas, regardless of backend bucket IDs.
-    let mut ordered_snapshots = snapshots.iter().collect::<Vec<_>>();
-    ordered_snapshots.sort_by_key(|snapshot| !snapshot.limit_name.eq_ignore_ascii_case("codex"));
-    for snapshot in ordered_snapshots {
-        let credit_row = snapshot.credits.as_ref().and_then(credit_status_row);
-        // Metadata-only buckets have no visible values and should not leave an empty heading.
-        if snapshot.primary.is_none()
-            && snapshot.secondary.is_none()
-            && credit_row.is_none()
-            && snapshot.individual_limit.is_none()
-        {
-            continue;
-        }
+    for snapshot in snapshots {
         stale |= now.signed_duration_since(snapshot.captured_at)
             > ChronoDuration::minutes(RATE_LIMIT_STALE_THRESHOLD_MINUTES);
         stale |= snapshot
@@ -243,7 +228,7 @@ pub(crate) fn compose_rate_limit_data_many(
             })
             .unwrap_or(false);
 
-        let limit_bucket_label = crate::model_catalog::model_display_name(&snapshot.limit_name);
+        let limit_bucket_label = snapshot.limit_name.clone();
         let show_limit_prefix = !limit_bucket_label.eq_ignore_ascii_case("codex");
         let primary_label = snapshot
             .primary
@@ -322,7 +307,9 @@ pub(crate) fn compose_rate_limit_data_many(
             });
         }
 
-        if let Some(row) = credit_row {
+        if let Some(credits) = snapshot.credits.as_ref()
+            && let Some(row) = credit_status_row(credits)
+        {
             rows.push(row);
         }
         if let Some(individual_limit) = snapshot.individual_limit.as_ref() {
@@ -354,15 +341,10 @@ pub(crate) fn compose_rate_limit_data_many(
 /// This function expects a remaining value in the `0..=100` range and clamps out-of-range input.
 /// Passing a used percentage by mistake will invert the bar and mislead users.
 pub(crate) fn render_status_limit_progress_bar(percent_remaining: f64) -> String {
-    render_limit_progress_bar(percent_remaining, STATUS_LIMIT_BAR_SEGMENTS)
-}
-
-/// Shared bar geometry for the status card and compact composer usage indicators.
-pub(crate) fn render_limit_progress_bar(percent_remaining: f64, segments: usize) -> String {
     let ratio = (percent_remaining / 100.0).clamp(0.0, 1.0);
-    let filled = (ratio * segments as f64).round() as usize;
-    let filled = filled.min(segments);
-    let empty = segments.saturating_sub(filled);
+    let filled = (ratio * STATUS_LIMIT_BAR_SEGMENTS as f64).round() as usize;
+    let filled = filled.min(STATUS_LIMIT_BAR_SEGMENTS);
+    let empty = STATUS_LIMIT_BAR_SEGMENTS.saturating_sub(filled);
     format!(
         "[{}{}]",
         STATUS_LIMIT_BAR_FILLED.repeat(filled),
@@ -456,7 +438,6 @@ mod tests {
         let now = Local::now();
         let codex = RateLimitSnapshotDisplay {
             limit_name: "codex".to_string(),
-            normal_model_slug: None,
             captured_at: now,
             primary: Some(window(/*used_percent*/ 10.0)),
             secondary: None,
@@ -469,7 +450,6 @@ mod tests {
         };
         let other = RateLimitSnapshotDisplay {
             limit_name: "codex-other".to_string(),
-            normal_model_slug: None,
             captured_at: now,
             primary: Some(window(/*used_percent*/ 20.0)),
             secondary: None,
@@ -504,7 +484,6 @@ mod tests {
         let now = Local::now();
         let other = RateLimitSnapshotDisplay {
             limit_name: "codex-other".to_string(),
-            normal_model_slug: None,
             captured_at: now,
             primary: Some(RateLimitWindowDisplay {
                 used_percent: 20.0,

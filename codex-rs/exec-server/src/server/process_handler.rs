@@ -1,4 +1,3 @@
-use crate::process_telemetry::ProcessTelemetry;
 use codex_exec_server_protocol::JSONRPCErrorError;
 
 use crate::ExecServerRuntimePaths;
@@ -40,12 +39,8 @@ impl ProcessHandler {
         self.process.set_notification_sender(notifications);
     }
 
-    pub(crate) async fn exec(
-        &self,
-        params: ExecParams,
-        telemetry: ProcessTelemetry,
-    ) -> Result<ExecResponse, JSONRPCErrorError> {
-        self.process.exec(params, telemetry).await
+    pub(crate) async fn exec(&self, params: ExecParams) -> Result<ExecResponse, JSONRPCErrorError> {
+        self.process.exec(params).await
     }
 
     pub(crate) async fn exec_read(

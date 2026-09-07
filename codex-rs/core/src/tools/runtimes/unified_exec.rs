@@ -476,7 +476,6 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
                         .open_session_with_prepared_exec_env(
                             req.process_id,
                             &prepared.exec_request,
-                            Some(ctx),
                             windows_sandbox_proxy_settings_mode,
                             /*network_policy_decider*/ None,
                             req.tty,
@@ -524,7 +523,6 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
             .manager
             .open_session_with_exec_env(
                 req.process_id,
-                ctx,
                 command,
                 options,
                 attempt,

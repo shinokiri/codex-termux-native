@@ -31,12 +31,7 @@ use std::io;
 use std::path::Path;
 
 #[cfg(target_os = "windows")]
-const WINDOWS_SANDBOX_WRAPPER_SETUP_ENV_ALLOWLIST: &[&str] = &[
-    "USERNAME",
-    "USERPROFILE",
-    // ShellExecuteExW needs SystemRoot to elevate the setup helper.
-    "SYSTEMROOT",
-];
+const WINDOWS_SANDBOX_WRAPPER_SETUP_ENV_ALLOWLIST: &[&str] = &["USERNAME", "USERPROFILE"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SandboxType {
@@ -280,12 +275,10 @@ impl std::error::Error for SandboxTransformError {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct SandboxManager {
     #[cfg(target_os = "macos")]
     seatbelt_profile: MacosSeatbeltProfile,
-    #[cfg(target_os = "macos")]
-    allowed_symlinked_codex_home: Option<AbsolutePathBuf>,
 }
 
 impl SandboxManager {
@@ -298,20 +291,7 @@ impl SandboxManager {
         Self {
             #[cfg(target_os = "macos")]
             seatbelt_profile: MacosSeatbeltProfile::FileSystemHelper,
-            #[cfg(target_os = "macos")]
-            allowed_symlinked_codex_home: None,
         }
-    }
-
-    /// Allows otherwise-authorized writable roots beneath the opted-in user home
-    /// to follow symlinks, including targets outside that home.
-    #[cfg(target_os = "macos")]
-    pub fn with_allowed_symlinked_codex_home(
-        mut self,
-        allowed_symlinked_codex_home: Option<AbsolutePathBuf>,
-    ) -> Self {
-        self.allowed_symlinked_codex_home = allowed_symlinked_codex_home;
-        self
     }
 
     pub fn select_initial(
@@ -415,7 +395,6 @@ impl SandboxManager {
                         extra_allow_unix_sockets: &[],
                     },
                     self.seatbelt_profile,
-                    self.allowed_symlinked_codex_home.as_ref(),
                 )
                 .map_err(|err| match err {
                     SeatbeltPreparationError::FileSystem(message) => {
@@ -472,22 +451,11 @@ impl SandboxManager {
                             .to_string(),
                     ));
                 }
-                let pending = pending_sandboxed_request?;
-                if let Some(metrics) = codex_otel::global() {
-                    let _ = metrics.counter(
-                        "codex.windows_sandbox.private_desktop",
-                        /*inc*/ 1,
-                        &[(
-                            "enabled",
-                            if windows_sandbox_private_desktop {
-                                "true"
-                            } else {
-                                "false"
-                            },
-                        )],
-                    );
-                }
-                (os_argv_to_strings(argv), None, Some(pending))
+                (
+                    os_argv_to_strings(argv),
+                    None,
+                    Some(pending_sandboxed_request?),
+                )
             }
             #[cfg(not(target_os = "windows"))]
             SandboxType::WindowsRestrictedToken => (
@@ -718,13 +686,11 @@ fn compatibility_workspace_write_policy(
         .and_then(|tmpdir| {
             AbsolutePathBuf::from_absolute_path(std::path::PathBuf::from(tmpdir)).ok()
         })
-        .is_some_and(|tmpdir| {
-            file_system_policy.can_write_local_path_with_cwd(tmpdir.as_path(), cwd)
-        });
+        .is_some_and(|tmpdir| file_system_policy.can_write_path_with_cwd(tmpdir.as_path(), cwd));
     let slash_tmp = Path::new("/tmp");
     let slash_tmp_writable = slash_tmp.is_absolute()
         && slash_tmp.is_dir()
-        && file_system_policy.can_write_local_path_with_cwd(slash_tmp, cwd);
+        && file_system_policy.can_write_path_with_cwd(slash_tmp, cwd);
 
     SandboxPolicy::WorkspaceWrite {
         writable_roots,

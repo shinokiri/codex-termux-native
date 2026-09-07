@@ -788,7 +788,6 @@ enabled = true
     let thread_request = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
             model: Some("mock-model".to_string()),
-            service_name: Some("codex_work_desktop".to_string()),
             ..Default::default()
         })
         .await?;
@@ -954,7 +953,6 @@ enabled = true
                 "measurement_name",
                 "number_value",
                 "operation",
-                "originator",
                 "plugin_id",
                 "thread_id",
                 "turn_id",
@@ -962,7 +960,6 @@ enabled = true
         );
         assert_eq!(event_params["thread_id"], thread_id);
         assert_eq!(event_params["turn_id"], turn_id);
-        assert_eq!(event_params["originator"], "codex_work_desktop");
     }
 
     Ok(())

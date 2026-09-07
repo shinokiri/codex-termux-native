@@ -28,7 +28,7 @@ use super::refresh_lock::RefreshCredentialLock;
 use super::token_needs_refresh;
 use super::validate_refresh_token_issuer;
 
-pub(super) const REFRESH_REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
+const REFRESH_REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 
 impl OAuthPersistor {
     pub(crate) async fn refresh_if_needed(&self) -> Result<()> {

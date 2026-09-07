@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use codex_exec_server_protocol::JSONRPCMessage;
@@ -14,14 +13,13 @@ use crate::connection::JsonRpcConnectionEvent;
 use crate::connection::JsonRpcTransport;
 use crate::noise_relay::message_framing::frame_jsonrpc_message;
 use crate::server::ConnectionProcessor;
-use crate::telemetry::ExecutorRegistration;
+use crate::telemetry::ConnectionTransport;
 
 pub(crate) struct NoiseStreamConnection<I, O> {
     pub(crate) outgoing_tx: mpsc::Sender<O>,
     pub(crate) incoming_rx: mpsc::Receiver<I>,
     pub(crate) disconnected_rx: watch::Receiver<bool>,
     pub(crate) writer_task: JoinHandle<()>,
-    pub(crate) executor_registration: Option<Arc<ExecutorRegistration>>,
 }
 
 pub(crate) struct NoiseOutboundMessage {
@@ -69,7 +67,7 @@ impl NoiseStreamHandler for ConnectionProcessor {
         self,
         connection: NoiseStreamConnection<Self::Incoming, Self::Outgoing>,
     ) {
-        ConnectionProcessor::run_registered_connection(
+        ConnectionProcessor::run_connection(
             &self,
             JsonRpcConnection {
                 outgoing_tx: connection.outgoing_tx,
@@ -78,7 +76,7 @@ impl NoiseStreamHandler for ConnectionProcessor {
                 task_handles: vec![connection.writer_task],
                 transport: JsonRpcTransport::Plain,
             },
-            connection.executor_registration,
+            ConnectionTransport::Relay,
         )
         .await;
     }

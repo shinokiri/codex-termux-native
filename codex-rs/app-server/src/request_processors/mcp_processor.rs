@@ -343,7 +343,6 @@ impl McpRequestProcessor {
         let McpServerStatusSnapshot {
             server_infos,
             tools_by_server,
-            tools_errors,
             resources,
             resource_templates,
             auth_statuses,
@@ -397,7 +396,6 @@ impl McpRequestProcessor {
                 ),
                 server_info: server_infos.get(name).cloned(),
                 tools: tools_by_server.get(name).cloned().unwrap_or_default(),
-                tools_error: tools_errors.get(name).cloned(),
                 resources: resources.get(name).cloned().unwrap_or_default(),
                 resource_templates: resource_templates.get(name).cloned().unwrap_or_default(),
                 auth_status: auth_statuses

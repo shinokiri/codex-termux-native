@@ -1,5 +1,4 @@
 use super::apps_processor::APP_READ_MAX_IDS;
-use super::config_processor::reload_user_config;
 use super::*;
 use crate::error_code::internal_error;
 use crate::error_code::invalid_request;
@@ -1515,10 +1514,7 @@ impl PluginRequestProcessor {
             }
         };
 
-        self.clear_plugin_related_caches();
-        reload_user_config(&self.config_manager, &self.thread_manager).await;
-        self.thread_manager.invalidate_mcp_runtimes().await;
-        self.thread_manager.refresh_hook_runtimes().await;
+        self.on_effective_plugins_changed().await;
 
         let plugin_mcp_servers = load_configured_plugin_mcp_servers(
             result.installed_path.as_path(),

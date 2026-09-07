@@ -578,7 +578,6 @@ impl ExecutorStdioServerLauncher {
         // rmcp write JSON-RPC requests after the process starts.
         let started = exec_backend
             .start(ExecParams {
-                metadata: Default::default(),
                 process_id,
                 argv,
                 cwd,

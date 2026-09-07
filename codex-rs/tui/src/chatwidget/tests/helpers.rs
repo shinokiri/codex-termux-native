@@ -109,7 +109,6 @@ pub(super) fn snapshot(percent: f64) -> RateLimitSnapshot {
     RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
-        normal_model_slug: None,
         primary: Some(RateLimitWindow {
             used_percent: percent.round() as i32,
             window_duration_mins: Some(60),
@@ -142,12 +141,9 @@ pub(super) fn test_session_telemetry(config: &Config, model: &str) -> SessionTel
 }
 
 pub(super) fn test_model_catalog(_config: &Config) -> Arc<ModelCatalog> {
-    Arc::new(
-        ModelCatalog::new(crate::test_support::TEST_MODEL_PRESETS.clone())
-            .with_collaboration_modes(
-            codex_models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets(),
-        ),
-    )
+    Arc::new(ModelCatalog::new(
+        crate::test_support::TEST_MODEL_PRESETS.clone(),
+    ))
 }
 
 // --- Helpers for tests that need direct construction and event draining ---
@@ -190,8 +186,6 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let model_catalog = test_model_catalog(&cfg);
     let common = ChatWidgetInit {
-        requires_openai_auth: cfg.model_provider.requires_openai_auth,
-        local_settings: crate::local_settings::LocalSettings::from(&cfg),
         config: cfg,
         frame_requester,
         app_event_tx,
@@ -314,7 +308,7 @@ pub(crate) fn set_fast_mode_test_catalog(chat: &mut ChatWidget) {
     .map(Into::into)
     .collect();
 
-    Arc::make_mut(&mut chat.model_catalog).models = models;
+    chat.model_catalog = Arc::new(ModelCatalog::new(models));
 }
 
 pub(crate) async fn make_chatwidget_manual_with_sender() -> (
@@ -331,23 +325,10 @@ pub(crate) async fn make_chatwidget_manual_with_sender() -> (
 pub(super) fn drain_insert_history(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
 ) -> Vec<Vec<ratatui::text::Line<'static>>> {
-    drain_insert_history_with(rx, |cell| cell.display_lines(/*width*/ 80))
-}
-
-pub(super) fn drain_insert_history_transcript(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
-) -> Vec<Vec<ratatui::text::Line<'static>>> {
-    drain_insert_history_with(rx, |cell| cell.transcript_lines(/*width*/ 80))
-}
-
-fn drain_insert_history_with(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
-    render: impl Fn(&dyn HistoryCell) -> Vec<ratatui::text::Line<'static>>,
-) -> Vec<Vec<ratatui::text::Line<'static>>> {
     let mut out = Vec::new();
     while let Ok(ev) = rx.try_recv() {
         if let AppEvent::InsertHistoryCell(cell) = ev {
-            let mut lines = render(cell.as_ref());
+            let mut lines = cell.display_lines(/*width*/ 80);
             if !cell.is_stream_continuation() && !out.is_empty() && !lines.is_empty() {
                 lines.insert(0, "".into());
             }
@@ -955,7 +936,6 @@ pub(super) fn complete_assistant_message(
 
 pub(super) fn pending_steer(text: &str) -> PendingSteer {
     PendingSteer {
-        client_id: "test-submission".to_string(),
         user_message: UserMessage::from(text),
         history_record: UserMessageHistoryRecord::UserMessageText,
         compare_key: PendingSteerCompareKey {

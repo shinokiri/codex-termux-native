@@ -626,7 +626,7 @@ mod tests {
                     item_id: "perm-1".to_string(),
                     environment_id: None,
                     started_at_ms: 0,
-                    cwd: cwd.into(),
+                    cwd,
                     reason: None,
                     permissions,
                 },
@@ -666,7 +666,7 @@ mod tests {
                     item_id: "perm-1".to_string(),
                     environment_id: None,
                     started_at_ms: 0,
-                    cwd: absolute_path(if cfg!(windows) { r"C:\tmp" } else { "/tmp" }).into(),
+                    cwd: absolute_path(if cfg!(windows) { r"C:\tmp" } else { "/tmp" }),
                     reason: None,
                     permissions: serde_json::from_value(json!({
                         "network": { "enabled": null }
