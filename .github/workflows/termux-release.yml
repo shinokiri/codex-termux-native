@@ -10,11 +10,11 @@ on:
   workflow_dispatch:
     inputs:
       revision:
-        description: "Termux revision for the current official stable release"
+        description: "Internal package revision; Codex keeps the official version"
         type: string
         default: "2"
       retry:
-        description: "Retry a previously attempted release after fixing the failure"
+        description: "Validate the current prepared source again after fixing a failure"
         type: boolean
         default: false
   repository_dispatch:
