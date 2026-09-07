@@ -434,8 +434,8 @@ def package(args):
             shutil.copy2(args.ndk / name, licenses / f"ndk-{name}.txt")
     gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
     v8_outputs = json.loads((gn / "v8-build.json").read_text())["outputs"]
-    # Use upstream's existing package metadata so the TUI can resolve releases.
-    # Source builds retain its commit-based identity rather than claiming a tag.
+    # Keep upstream's package version; local build provenance below records the
+    # actual source commit and packaging revision separately.
     (stage / "codex-package.json").write_text(
         json.dumps(
             {
