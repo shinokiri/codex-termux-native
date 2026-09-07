@@ -181,11 +181,15 @@ def publish(args, api):
         return
     # target_commitish is ignored by GitHub when the tag already exists.
     # Never publish a new package under a tag pointing at a different source.
-    tagged_commit = api.repo(f"commits/{quote(tag, safe='')}")
-    if tagged_commit and tagged_commit["sha"] != args.source_ref:
-        raise RuntimeError(
-            "The release tag points to different source; use a new revision"
-        )
+    tag_ref = api.repo(f"git/ref/tags/{quote(tag, safe='')}")
+    if tag_ref:
+        # Resolve existing annotated tags too. The commits endpoint returns 422
+        # for an absent tag, while the refs endpoint returns 404.
+        tagged_commit = api.repo(f"commits/{quote(tag, safe='')}")
+        if tagged_commit["sha"] != args.source_ref:
+            raise RuntimeError(
+                "The release tag points to different source; use a new revision"
+            )
     metadata = {
         "tag_name": tag,
         "target_commitish": args.source_ref,

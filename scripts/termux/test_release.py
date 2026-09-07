@@ -7,6 +7,7 @@ import tarfile
 import tempfile
 from types import SimpleNamespace
 import unittest
+from urllib.error import HTTPError
 
 from scripts.termux.release import ASSETS, publish
 from scripts.termux.release_source import align_workspace_versions
@@ -22,7 +23,17 @@ class FakeGitHub:
 
     def repo(self, path, *, method="GET", data=None):
         if method == "GET":
-            return self.tagged_commit if path.startswith("commits/") else self.release
+            if path.startswith("git/ref/tags/"):
+                return (
+                    {"object": {"type": "commit", **self.tagged_commit}}
+                    if self.tagged_commit
+                    else None
+                )
+            if path.startswith("commits/"):
+                if not self.tagged_commit:
+                    raise HTTPError(path, 422, "No commit found for SHA", {}, None)
+                return self.tagged_commit
+            return self.release
         if path == "releases" and method == "POST":
             assert data["draft"]
             self.release = {**data, "id": 1, "assets": []}
@@ -100,6 +111,10 @@ class ReleaseTest(unittest.TestCase):
             self.assertTrue(interrupted.published)
             self.assertEqual(interrupted.release["target_commitish"], args.source_ref)
             self.assertIn(f"Source: `{args.source_ref}`", interrupted.release["body"])
+            matching_tag = FakeGitHub()
+            matching_tag.tagged_commit = {"sha": args.source_ref}
+            publish(args, matching_tag)
+            self.assertTrue(matching_tag.published)
             tagged = FakeGitHub()
             tagged.tagged_commit = {"sha": "a" * 40}
             with self.assertRaisesRegex(RuntimeError, "tag points to different source"):
