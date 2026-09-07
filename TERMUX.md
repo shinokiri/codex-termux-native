@@ -112,9 +112,13 @@ CLI/session/update regressions and native compatibility tests. The user has
 reported successful installation and ordinary use on Termux. This is not a
 record of completing every device smoke scenario.
 
-The next packaging revision aligns runtime version labels with upstream and
-fixes draft publication retries. Its release workflow verifies the prepared
-source before publication; source commits alone do not imply a published build.
+Packaging revision 2 was published on 2026-09-07 from source
+`628e04690892926ae683d00c279df3b91f3864af`, with runtime version `0.153.4`.
+Its [build and regression gates](https://github.com/shinokiri/codex-termux-native/actions/runs/34119609682)
+all passed. A missing-tag API lookup initially blocked publication; the
+[publication recovery](https://github.com/shinokiri/codex-termux-native/actions/runs/34128172122)
+used the same verified artifact after testing the controller fix, without
+rebuilding Android or V8. All three published asset digests matched the artifact.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
