@@ -18,15 +18,19 @@ class FakeGitHub:
         self.release = None
         self.fail_upload = fail_upload
         self.published = False
+        self.tagged_commit = None
 
     def repo(self, path, *, method="GET", data=None):
         if method == "GET":
-            return None
+            return self.tagged_commit if path.startswith("commits/") else self.release
         if path == "releases" and method == "POST":
             assert data["draft"]
             self.release = {**data, "id": 1, "assets": []}
             return self.release
         if path == "releases/1" and method == "PATCH":
+            self.release.update(data)
+            if data.get("draft"):
+                return self.release
             assert {asset["name"] for asset in self.release["assets"]} == set(ASSETS)
             self.published = True
             return {"html_url": "https://github.com/example/release"}
@@ -54,7 +58,7 @@ class ReleaseTest(unittest.TestCase):
                 "upstream_commit": "a" * 40,
                 "upstream_ref": "rust-v0.153.4",
                 "release_version": "0.153.4+termux.1",
-                "cli_version": "0.153.4+termux.1",
+                "cli_version": "0.153.4",
                 "target": "aarch64-linux-android",
                 "source_dirty": False,
             }
@@ -80,6 +84,27 @@ class ReleaseTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "upload interrupted"):
                 publish(args, interrupted)
             self.assertFalse(interrupted.published)
+            # Retry the real interrupted draft after the validated source changed.
+            info["codex_commit"] = "b" * 40
+            args.source_ref = info["codex_commit"]
+            (package / "BUILD-INFO.json").write_text(json.dumps(info))
+            with tarfile.open(fixture["archive_path"], "w:gz") as archive:
+                for path in package.iterdir():
+                    archive.add(path, arcname=path.name)
+            digest = hashlib.sha256(fixture["archive_path"].read_bytes()).hexdigest()
+            fixture["checksum_path"].write_text(
+                f"{digest}  {fixture['archive_path'].name}\n"
+            )
+            interrupted.fail_upload = False
+            publish(args, interrupted)
+            self.assertTrue(interrupted.published)
+            self.assertEqual(interrupted.release["target_commitish"], args.source_ref)
+            self.assertIn(f"Source: `{args.source_ref}`", interrupted.release["body"])
+            tagged = FakeGitHub()
+            tagged.tagged_commit = {"sha": "a" * 40}
+            with self.assertRaisesRegex(RuntimeError, "tag points to different source"):
+                publish(args, tagged)
+            self.assertIsNone(tagged.release)
             args.source_ref = "d" * 40
             wrong_source = FakeGitHub()
             with self.assertRaisesRegex(RuntimeError, "Release identity"):

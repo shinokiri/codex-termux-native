@@ -84,8 +84,15 @@ pub(super) async fn updates_check(config: &Config) -> DoctorCheck {
     match fetch_latest_version(&client, &install_context).await {
         Ok(latest_version) => {
             details.push(format!("latest version: {latest_version}"));
-            let current_version =
-                option_env!("CODEX_TERMUX_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+            #[cfg(target_os = "android")]
+            let installed_version = codex_install_context::termux::installed_version(
+                &install_context,
+                env!("CARGO_PKG_VERSION"),
+            );
+            #[cfg(target_os = "android")]
+            let current_version = installed_version.as_str();
+            #[cfg(not(target_os = "android"))]
+            let current_version = env!("CARGO_PKG_VERSION");
             if is_newer(&latest_version, current_version) == Some(true) {
                 details.push("latest version status: newer version is available".to_string());
             } else {

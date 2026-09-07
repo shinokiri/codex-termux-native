@@ -78,6 +78,17 @@ def prepare(args):
     if versions != {V8_VERSION}:
         raise RuntimeError(f"Review the V8 source pin for Cargo versions {versions}")
     args.work_dir.mkdir(parents=True, exist_ok=True)
+    gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
+    if (gn / "v8-build.json").is_file():
+        verify_v8(args)
+        # Keep pinned license sources, without fetching dependencies used only
+        # to compile a V8 archive that has already been restored and verified.
+        checkout(args.source, "https://github.com/denoland/rusty_v8.git", V8_COMMIT)
+        run(
+            ["git", "submodule", "update", "--init", "--depth=1", "--", "v8"],
+            cwd=args.source,
+        )
+        return
     # Catch missing Bionic interfaces before fetching and compiling V8.
     abi_probe = args.work_dir / "android-abi.c"
     abi_probe.write_text(
@@ -289,9 +300,7 @@ def codex_env(args):
     )
     env.update(
         {
-            "STABLE_GIT_COMMIT": identity["codex_commit"]
-            + ("-dirty" if identity["source_dirty"] else ""),
-            "CODEX_TERMUX_VERSION": identity["cli_version"],
+            "STABLE_GIT_COMMIT": identity["upstream_commit"],
             "CARGO_TARGET_DIR": str(args.work_dir / "codex-target"),
             "CARGO_PROFILE_RELEASE_DEBUG": "0",
             "CARGO_PROFILE_RELEASE_STRIP": "symbols",
@@ -433,7 +442,6 @@ def package(args):
                 "layoutVersion": 1,
                 "version": identity["package_version"],
                 "target": TARGET,
-                "variant": "termux-native",
                 "entrypoint": "bin/codex",
             },
             indent=2,

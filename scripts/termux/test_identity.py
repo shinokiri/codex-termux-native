@@ -37,16 +37,11 @@ class IdentityTest(unittest.TestCase):
                 check=True,
             )
             snapshot = build_identity(root)
-            commit = snapshot["codex_commit"]
-            self.assertEqual(
-                snapshot["cli_version"], f"main.aaaaaaaaaaaa+termux.g{commit[:12]}"
-            )
+            self.assertEqual(snapshot["cli_version"], "0.0.0")
             self.assertFalse(snapshot["source_dirty"])
             manifest.write_text('[workspace.package]\nversion = "0.153.4"\n')
             release = build_identity(root)
-            self.assertEqual(
-                release["package_version"], f"0.153.4+termux.g{commit[:12]}.dirty"
-            )
+            self.assertEqual(release["package_version"], "0.153.4")
             self.assertEqual(release["cli_version"], release["package_version"])
             self.assertTrue(release["source_dirty"])
             # Reading the identity must not rewrite Cargo or its lockfile.
@@ -74,4 +69,5 @@ class IdentityTest(unittest.TestCase):
             )
             published = build_identity(root)
             self.assertEqual(published["release_version"], "0.153.4+termux.2")
-            self.assertEqual(published["cli_version"], published["release_version"])
+            self.assertEqual(published["cli_version"], "0.153.4")
+            self.assertEqual(published["package_version"], "0.153.4")

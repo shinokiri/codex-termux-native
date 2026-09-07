@@ -6,19 +6,23 @@ import os
 from pathlib import Path
 import tarfile
 import tempfile
+import subprocess
 import unittest
 
 from scripts.install.test_install_sh import run_installer_in
 from scripts.install.test_install_sh import write_executable
 
 
-def release_fixture(root, revision):
+def release_fixture(root, revision, *, cli_version="0.153.4"):
     version = f"0.153.4+termux.{revision}"
     package = root / f"fixture-{revision}"
     (package / "bin").mkdir(parents=True)
     (package / "lib").mkdir()
-    (package / "codex-package.json").write_text(json.dumps({"version": version}))
-    write_executable(package / "bin/codex", f"#!/bin/sh\necho 'codex-cli {version}'\n")
+    (package / "codex-package.json").write_text(json.dumps({"version": cli_version}))
+    (package / "BUILD-INFO.json").write_text(json.dumps({"release_version": version}))
+    write_executable(
+        package / "bin/codex", f"#!/bin/sh\necho 'codex-cli {cli_version}'\n"
+    )
     write_executable(package / "bin/codex-code-mode-host", "#!/bin/sh\nexit 0\n")
     archive_path = root / "codex-package-aarch64-linux-android.tar.gz"
     with tarfile.open(archive_path, "w:gz") as archive:
@@ -50,11 +54,13 @@ class TermuxInstallerTest(unittest.TestCase):
             user_data.parent.mkdir(parents=True)
             user_data.write_text("existing session\n")
             for revision in (1, 2):
+                cli_version = "0.153.4+termux.1" if revision == 1 else "0.153.4"
+                fixture = release_fixture(root, revision, cli_version=cli_version)
                 result, requests = run_installer_in(
                     root,
                     "latest",
                     platform="android",
-                    **release_fixture(root, revision),
+                    **fixture,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertTrue(
@@ -67,6 +73,18 @@ class TermuxInstallerTest(unittest.TestCase):
                     )
                 )
                 self.assertTrue((current / "bin/codex-code-mode-host").is_file())
+                self.assertEqual(
+                    subprocess.check_output(
+                        [current / "bin/codex", "--version"], text=True
+                    ),
+                    f"codex-cli {cli_version}\n",
+                )
+            (root / "requests.log").unlink()
+            result, requests = run_installer_in(
+                root, "latest", platform="android", **fixture
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(any(url.endswith(".tar.gz") for url in requests))
             self.assertEqual(user_data.read_text(), "existing session\n")
 
     def test_corrupt_download_leaves_the_installed_version_selected(self):

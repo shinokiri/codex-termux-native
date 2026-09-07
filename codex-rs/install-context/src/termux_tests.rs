@@ -2,6 +2,38 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn local_revision_orders_updates_without_changing_the_runtime_manifest() {
+    let root = tempfile::tempdir().expect("package directory");
+    let bin = root.path().join("bin");
+    std::fs::create_dir(&bin).expect("bin directory");
+    let executable = bin.join("codex");
+    std::fs::write(&executable, "").expect("executable");
+    std::fs::write(
+        root.path().join("codex-package.json"),
+        r#"{"version":"0.153.4"}"#,
+    )
+    .expect("runtime manifest");
+    std::fs::write(
+        root.path().join("BUILD-INFO.json"),
+        r#"{"release_version":"0.153.4+termux.2"}"#,
+    )
+    .expect("local build metadata");
+    let context = InstallContext::from_exe(
+        /*is_macos*/ false,
+        /*current_exe*/ Some(&executable),
+        /*method_override*/ None,
+    );
+    let version = installed_version(&context, "0.153.4");
+    assert_eq!(version, "0.153.4+termux.2");
+    assert_eq!(
+        context.package_manifest().expect("manifest").version,
+        Version::new(0, 153, 4)
+    );
+    assert_eq!(is_newer("0.153.4+termux.2", &version), Some(false));
+    assert_eq!(is_newer("0.153.4+termux.3", &version), Some(true));
+}
+
+#[test]
 fn unpublished_package_does_not_offer_an_update() {
     let mut assets = vec![
         "install.sh".to_owned(),

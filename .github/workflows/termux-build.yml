@@ -62,11 +62,6 @@ jobs:
           nproc
           free -h
           df -h "${RUNNER_TEMP}"
-      - name: Check out pinned V8 sources and Android dependencies
-        run: >-
-          python3 scripts/termux/build.py prepare
-          --work-dir "${RUNNER_TEMP}/termux-native"
-          --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
       - name: Select cache by V8 build inputs
         id: v8-inputs
         run: >-
@@ -84,6 +79,11 @@ jobs:
             ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/src_binding.rs
             ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/args.gn
             ${{ runner.temp }}/termux-native/v8-target/aarch64-linux-android/release/gn_out/v8-build.json
+      - name: Prepare pinned V8 sources, reusing a verified cache when available
+        run: >-
+          python3 scripts/termux/build.py prepare
+          --work-dir "${RUNNER_TEMP}/termux-native"
+          --ndk "${ANDROID_HOME}/ndk/${TERMUX_NDK_VERSION}" --sdk "${ANDROID_HOME}"
       - name: Build V8 with pointer compression and sandbox
         if: steps.v8-cache.outputs.cache-hit != 'true'
         run: >-

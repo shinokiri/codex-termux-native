@@ -1,3 +1,9 @@
+pub(crate) fn display_version(version: &str) -> &str {
+    version
+        .split_once("+termux.")
+        .map_or(version, |(upstream, _)| upstream)
+}
+
 pub(crate) fn is_newer(latest: &str, current: &str) -> Option<bool> {
     #[cfg(target_os = "android")]
     {

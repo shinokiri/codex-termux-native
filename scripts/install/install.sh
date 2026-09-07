@@ -1045,6 +1045,9 @@ release_dir_is_complete() {
   esac
 
   installed_version="$(version_from_binary "$release_dir/bin/codex" || version_from_binary "$release_dir/codex" || true)"
+  if [ "$IS_TERMUX" = "true" ] && [ "$installed_version" = "${expected_version%%+termux.*}" ]; then
+    return 0
+  fi
   [ "$installed_version" = "$expected_version" ]
 }
 
@@ -1162,16 +1165,21 @@ resolve_release
 release_name="$resolved_version-$vendor_target"
 release_dir="$RELEASES_DIR/$release_name"
 current_version="$(current_installed_version)"
+display_version="$resolved_version"
+if [ "$IS_TERMUX" = "true" ]; then
+  display_version="${resolved_version%%+termux.*}"
+  current_version="${current_version%%+termux.*}"
+fi
 
-if [ -n "$current_version" ] && [ "$current_version" != "$resolved_version" ]; then
-  step "Updating Codex CLI from $current_version to $resolved_version"
+if [ -n "$current_version" ] && [ "$current_version" != "$display_version" ]; then
+  step "Updating Codex CLI from $current_version to $display_version"
 elif [ -n "$current_version" ]; then
   step "Updating Codex CLI"
 else
   step "Installing Codex CLI"
 fi
 step "Detected platform: $platform_label"
-step "Resolved version: $resolved_version"
+step "Resolved version: $display_version"
 
 detect_conflicting_install
 
@@ -1239,5 +1247,5 @@ case "$path_action" in
     ;;
 esac
 
-printf 'Codex CLI %s installed successfully.\n' "$resolved_version"
+printf 'Codex CLI %s installed successfully.\n' "$display_version"
 maybe_launch_codex_now

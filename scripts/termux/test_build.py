@@ -72,6 +72,25 @@ class PrepareTest(unittest.TestCase):
             build.prepare(self.args)
         self.assertEqual(source.read_text(), "different local headers\n")
 
+    def test_verified_cache_skips_compiler_dependencies_and_keeps_license_sources(self):
+        gn = self.args.work_dir / "v8-target" / build.TARGET / "release/gn_out"
+        for name in ("args.gn", "src_binding.rs", "obj/librusty_v8.a"):
+            path = gn / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(name)
+        (gn / "v8-build.json").write_text(json.dumps(build.v8_fingerprint(gn)))
+        with patch.object(build, "run") as run:
+            build.prepare(self.args)
+            run.assert_called_once_with(
+                ["git", "submodule", "update", "--init", "--depth=1", "--", "v8"],
+                cwd=self.args.source,
+            )
+            run.reset_mock()
+            (gn / "src_binding.rs").write_text("mismatched binding")
+            with self.assertRaisesRegex(RuntimeError, "paired outputs differ"):
+                build.prepare(self.args)
+            run.assert_not_called()
+
 
 class CompilerBuiltinsTest(unittest.TestCase):
     def test_codex_env_links_ndk_compiler_builtins(self):
@@ -102,8 +121,9 @@ class CompilerBuiltinsTest(unittest.TestCase):
                     "build_identity",
                     return_value={
                         "codex_commit": "codex-source-revision",
+                        "upstream_commit": "official-source-revision",
                         "source_dirty": False,
-                        "cli_version": "main.upstream+termux.revision",
+                        "cli_version": "0.153.4",
                     },
                 ),
             ):
@@ -113,6 +133,7 @@ class CompilerBuiltinsTest(unittest.TestCase):
                 env["CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS"].split()[-2:],
                 ["-C", f"link-arg={archive}"],
             )
+            self.assertEqual(env["STABLE_GIT_COMMIT"], "official-source-revision")
 
 
 class PackageTest(unittest.TestCase):
@@ -132,8 +153,8 @@ class PackageTest(unittest.TestCase):
                 {
                     "codex_commit": "compiled-source-revision",
                     "source_dirty": False,
-                    "package_version": "0.153.4+termux.g0123456789ab",
-                    "cli_version": "0.153.4+termux.g0123456789ab",
+                    "package_version": "0.153.4",
+                    "cli_version": "0.153.4",
                 }
             ).encode(),
             "LICENSE": b"Codex license",
@@ -217,8 +238,7 @@ class PackageTest(unittest.TestCase):
     def test_release_archive_matches_the_standalone_installer_layout(self):
         identity_path = self.args.work_dir / "codex-build.json"
         identity = json.loads(identity_path.read_text())
-        for field in ("package_version", "cli_version", "release_version"):
-            identity[field] = "0.153.4+termux.1"
+        identity["release_version"] = "0.153.4+termux.1"
         identity_path.write_text(json.dumps(identity))
         build.package(self.args)
         archive_path = self.args.work_dir / f"codex-package-{build.TARGET}.tar.gz"

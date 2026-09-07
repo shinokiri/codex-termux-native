@@ -6,24 +6,17 @@ independently. No third-party Codex fork patches or release binaries are used.
 
 ## Version identity and upstream updates
 
-Official `main` uses `0.0.0` in its Cargo workspace; official release-tag source
-contains the release version. The first candidate inherited that placeholder
-because it was built from a main snapshot. It is not a reset of an official
-release version. In particular, this branch's initial upstream commit is not the
-same source as `rust-v0.153.4`, even though that is the latest stable release
-observed on 2026-09-06.
+Runtime version fields match the exact official Cargo version. A build of
+`rust-v0.153.4` reports `0.153.4` in the CLI, TUI, package manifest and client
+build information. The existing `STABLE_GIT_COMMIT` stamp identifies the official
+upstream commit. Development main keeps its upstream `0.0.0` placeholder.
 
-New builds stamp `codex --version` as
-`main.<upstream-commit>+termux.g<fork-commit>` for this development snapshot.
-Published builds retain the official version plus a numeric Termux revision,
-for example `0.153.4+termux.1`. Local modified development checkouts add `.dirty`.
-Version labels do not rewrite Cargo or protocol version selection. When adapting
-a release, newly added workspace crates inherit that release's Cargo version.
-The existing upstream build-info mechanism receives the fork commit, and the
-package includes `codex-package.json`: the TUI shows a source commit for main
-snapshots and a release version for versioned packages. `BUILD-INFO.json`
-records both upstream and fork identities from the compile step. The previously
-uploaded `45d7ad58` candidate predates this stamping change.
+The actual fork source commit, dirty state and packaging revision remain in
+`BUILD-INFO.json`. Release tags and installation directories use an internal key
+such as `0.153.4+termux.2` so an adaptation fix can update the same official
+version. The updater reads that key from the local build metadata; it is not
+used as the runtime version. Existing installations with the older version
+suffix can upgrade normally.
 
 `scripts/termux/upstream.json` records the integrated official commit and the
 latest stable release reviewed. Update the commit only after integrating its
@@ -45,11 +38,14 @@ updates` workflow implements the release pipeline:
    source to `termux/releases/<version>` without rewriting any branch.
 3. Run formatting, installer/update and selected CLI/compatibility regressions,
    plus the real Android build and ELF/package checks against that source commit.
-   Reuse V8 when its inputs match. A changed locked V8 version still requires
-   reviewing the source pin and binding patch.
+   Reuse V8 when its inputs match. Cache hits fetch only the pinned license
+   sources, skipping the remaining V8 compiler dependencies. A changed locked V8
+   version still requires reviewing the source pin and binding patch.
 4. Create a draft GitHub release, upload the package, checksums and installer,
-   verify their digests, then publish it as the latest Termux release. Failures
-   leave the previous published release available to clients.
+   verify their digests, then publish it as the latest Termux release. A draft
+   retry updates its source identity before uploading replacement assets. An
+   existing tag must already match the validated source. Failures leave the
+   previous published release available to clients.
 
 The source branches keep the controller's reviewed workflow files unchanged;
 the built-in CI token cannot write workflows. Their product source is the exact
@@ -60,9 +56,9 @@ and the official tag's commit; the Actions run's head identifies the controller.
 
 GitHub does not send an upstream repository's `release` event to a fork.
 The workflow therefore checks published releases every five minutes and also
-accepts an `upstream-release` repository dispatch. **Its scheduled trigger is
-inactive until `termux/native` is the fork's default branch.** GitHub may delay
-scheduled runs. The workflow uses the repository's built-in GitHub token; no
+accepts an `upstream-release` repository dispatch. The scheduled trigger runs
+from `termux/native`, now the fork's default branch. GitHub may delay scheduled
+runs. The workflow uses the repository's built-in GitHub token; no
 OpenAI API key or separate hosting service is needed.
 
 Each attempted official version/revision has a small `termux-build-*` tag so a
@@ -83,7 +79,8 @@ Unchanged release checks finish before installing build tools.
 
 Android builds check this repository's completed releases, display the existing
 update prompt, and run the native installer through `codex update`. The version
-comparison includes both the upstream version and Termux revision. Update state
+comparison includes the upstream version and the local packaging revision,
+while visible version numbers use the upstream version. Update state
 uses `version-termux.json`, so an old official-channel cache cannot announce a
 package before its Termux build exists. This retains the upstream startup check
 and cache behavior: the background check refreshes metadata for a later startup;
@@ -103,35 +100,21 @@ curl -fsSL https://github.com/shinokiri/codex-termux-native/releases/latest/down
 codex update
 ```
 
-This URL becomes usable after the first release is published. Older manually
-unpacked candidates need that initial installation once. Device validation of
-the prompt, installer and resulting binaries remains required.
+Older manually unpacked candidates need that initial installation once. The
+installer prints any required PATH setup instructions.
 
 ## Status
 
-This is a development candidate, not a device-validated release.
+The first published package, based on official `rust-v0.153.4`, passed the
+[release workflow](https://github.com/shinokiri/codex-termux-native/actions/runs/34053785175):
+Android CLI/code-mode host/probe linking, ELF and archive checks, selected
+CLI/session/update regressions and native compatibility tests. The user has
+reported successful installation and ordinary use on Termux. This is not a
+record of completing every device smoke scenario.
 
-[Focused CI at `ea090a37`](https://github.com/shinokiri/codex-termux-native/actions/runs/34035460649)
-passed all 268 selected tests (plus one intentionally skipped subprocess
-fixture), four MCP credential fallback/deletion tests, Android lock/PTY/keyring
-API checks, targeted Clippy, formatting and the Bazel lock check. The independent
-Android CLI and network-probe release build also compiled and linked successfully
-in 29 minutes 36 seconds. [CLI regression checks](https://github.com/shinokiri/codex-termux-native/actions/runs/34035460642)
-passed all 92 selected exec and CLI/TUI session-resume tests on Linux.
-The [first Android source build](https://github.com/shinokiri/codex-termux-native/actions/runs/34026086815)
-completed its V8 compilation step, then failed during TUI code generation at
-Rust's default recursion limit. The subsequent independent CLI build passed
-TUI code generation but hit the same limit in `codex-exec`. Recursion limits
-apply per crate: Android's TUI and exec libraries and the final `codex` binary
-now use 256, matching the compiler's recommendation and the app-server crate.
-The successful independent Android build verifies those compiler-limit fixes.
-The corrected full build then reached the code-mode host's final link and exposed
-V8's required `__clear_cache` compiler builtin. The branch now links the
-NDK-selected compiler-rt builtins archive explicitly.
-The [resulting Android source build at `45d7ad58`](https://github.com/shinokiri/codex-termux-native/actions/runs/34043607693)
-restored and verified the matching V8 pair, compiled and linked all three
-executables, passed the ELF and package checks, and uploaded the candidate.
-Device execution remains a separate gate.
+The next packaging revision aligns runtime version labels with upstream and
+fixes draft publication retries. Its release workflow verifies the prepared
+source before publication; source commits alone do not imply a published build.
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
@@ -141,7 +124,7 @@ Device execution remains a separate gate.
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
 | V8 / code mode | Exact `v8 = 150.4.0` Android source compilation, paired cache verification and code-mode host linking passed; Android binding-header patch; NDK compiler builtins selected for the final link | V8 sandbox and code-mode execution on device |
 | PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
-| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshot v2 resolves `env` through `PATH`; stdio MCP children inherit Termux execution variables | Targeted shell tests passed; full Android build and subprocess execution pending |
+| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshot v2 resolves `env` through `PATH`; stdio MCP children inherit Termux execution variables | Targeted shell tests and Android build passed; broader device subprocess checks remain |
 | Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
 | Process sandbox | Upstream has no Android process-sandbox backend | Permission and approval behavior on device; executor requests that require a sandbox are unsupported |
 
@@ -182,16 +165,13 @@ tests and the complete `just fmt` command on code changes, including build recip
 edits. It installs the formatter tools on its own runner and does not wait for
 the Android source build. The worktree must remain unchanged after formatting.
 
-The native-check workflow also runs `build.py cli` with the pinned Android NDK
-and the candidate's release configuration. It builds and links the CLI and
-network probe independently of V8: only the separate code-mode host links that
-library. This gate uses `cargo build` because `cargo check` missed the initial
-TUI recursion-depth failure during code generation. Code-mode host linking and
-device execution remain separate checks.
+The Android source-build workflow builds and links the CLI, code-mode host
+and network probe once. The native-check workflow keeps the focused behavior
+tests and Android API checks, without duplicating that CLI build. Formatting
+must pass before the release controller starts its Android build.
 
-CLI, exec and TUI changes additionally run existing exec unit tests and CLI/TUI
-session-resume regressions on Linux through `just test`. Android compiler
-settings are exercised by the independent native CLI build.
+CLI, exec and TUI changes also run selected exec, session-resume and update
+regressions on Linux through `just test`.
 
 ```sh
 just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store

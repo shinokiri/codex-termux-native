@@ -20,8 +20,8 @@ def build_identity(root: Path) -> dict:
             text=True,
         ).strip()
     )
-    revision = f"termux.g{commit[:12]}" + (".dirty" if dirty else "")
-    # main's 0.0.0 is an upstream placeholder, not a released Codex version.
+    # Runtime version fields use the exact upstream Cargo version. Packaging
+    # revisions and the actual modified source commit stay in BUILD-INFO.json.
     release_revision = upstream.get("release_revision")
     if release_revision is not None:
         if (
@@ -34,23 +34,18 @@ def build_identity(root: Path) -> dict:
             raise RuntimeError(
                 "A Termux release requires clean, versioned upstream source"
             )
-        package_version = f"{version}+termux.{release_revision}"
-        cli_version = package_version
-    elif version == "0.0.0":
-        cli_version = f"{upstream['ref']}.{upstream['commit'][:12]}+{revision}"
-        package_version = version
-    else:
-        separator = "." if "+" in version else "+"
-        package_version = f"{version}{separator}{revision}"
-        cli_version = package_version
     return {
         "codex_commit": commit,
         "source_dirty": dirty,
         "upstream_ref": upstream["ref"],
         "upstream_commit": upstream["commit"],
         "upstream_version": version,
-        "package_version": package_version,
-        "cli_version": cli_version,
-        "release_version": package_version if release_revision is not None else None,
+        "package_version": version,
+        "cli_version": version,
+        "release_version": (
+            f"{version}+termux.{release_revision}"
+            if release_revision is not None
+            else None
+        ),
         "port_commit": upstream.get("port_commit"),
     }

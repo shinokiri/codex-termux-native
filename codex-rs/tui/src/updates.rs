@@ -51,8 +51,17 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
         });
     }
 
+    #[cfg(target_os = "android")]
+    let installed_version = codex_install_context::termux::installed_version(
+        codex_install_context::InstallContext::current(),
+        CODEX_CLI_VERSION,
+    );
+    #[cfg(target_os = "android")]
+    let current_version = installed_version.as_str();
+    #[cfg(not(target_os = "android"))]
+    let current_version = CODEX_CLI_VERSION;
     info.and_then(|info| {
-        if is_newer(&info.latest_version, CODEX_CLI_VERSION).unwrap_or(false) {
+        if is_newer(&info.latest_version, current_version).unwrap_or(false) {
             Some(info.latest_version)
         } else {
             None

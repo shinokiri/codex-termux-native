@@ -12,7 +12,7 @@ on:
       revision:
         description: "Termux revision for the current official stable release"
         type: string
-        default: "1"
+        default: "2"
       retry:
         description: "Retry a previously attempted release after fixing the failure"
         type: boolean
@@ -52,7 +52,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '1' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '2' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -73,7 +73,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '1' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '2' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -116,10 +116,9 @@ jobs:
     uses: ./.github/workflows/termux-native.yml
     with:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
-      skip_android_cli: true
 
   android:
-    needs: prepare
+    needs: [prepare, format]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/termux-build.yml
     with:

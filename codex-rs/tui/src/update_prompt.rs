@@ -199,7 +199,7 @@ impl WidgetRef for &UpdatePromptScreen {
             format!(
                 "{current} -> {latest}",
                 current = self.current_version,
-                latest = self.latest_version
+                latest = crate::update_versions::display_version(&self.latest_version)
             )
             .dim(),
         ]));
@@ -264,12 +264,15 @@ mod tests {
 
     #[test]
     fn update_prompt_snapshot() {
-        let screen = new_prompt();
-        let mut terminal = Terminal::new(VT100Backend::new(80, 12)).expect("terminal");
-        terminal
-            .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
-            .expect("render update prompt");
-        insta::assert_snapshot!("update_prompt_modal", terminal.backend());
+        for latest in ["9.9.9", "9.9.9+termux.2"] {
+            let mut screen = new_prompt();
+            screen.latest_version = latest.to_string();
+            let mut terminal = Terminal::new(VT100Backend::new(80, 12)).expect("terminal");
+            terminal
+                .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
+                .expect("render update prompt");
+            insta::assert_snapshot!("update_prompt_modal", terminal.backend());
+        }
     }
 
     #[test]

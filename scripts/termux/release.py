@@ -139,6 +139,7 @@ def prepare(args, api):
 
 
 def verified_package(directory, version, commit):
+    upstream_version = version.partition("+termux.")[0]
     checksum_lines = (directory / "codex-package_SHA256SUMS").read_text().splitlines()
     expected = next(
         line.split()[0] for line in checksum_lines if line.split()[1:] == [ARCHIVE]
@@ -154,8 +155,8 @@ def verified_package(directory, version, commit):
         if (
             info["codex_commit"] != commit
             or info["release_version"] != version
-            or info["cli_version"] != version
-            or manifest["version"] != version
+            or info["cli_version"] != upstream_version
+            or manifest["version"] != upstream_version
             or info["target"] != "aarch64-linux-android"
             or info["source_dirty"]
         ):
@@ -178,28 +179,38 @@ def publish(args, api):
     if release and not release["draft"]:
         print(f"Already published: {release['html_url']}")
         return
+    # target_commitish is ignored by GitHub when the tag already exists.
+    # Never publish a new package under a tag pointing at a different source.
+    tagged_commit = api.repo(f"commits/{quote(tag, safe='')}")
+    if tagged_commit and tagged_commit["sha"] != args.source_ref:
+        raise RuntimeError(
+            "The release tag points to different source; use a new revision"
+        )
+    metadata = {
+        "tag_name": tag,
+        "target_commitish": args.source_ref,
+        "name": f"Codex {info['cli_version']} for Termux",
+        "draft": True,
+        "prerelease": False,
+        "body": (
+            f"Native Android ARM64 build of official [{info['upstream_ref']}]"
+            f"(https://github.com/openai/codex/commit/{info['upstream_commit']}).\n\n"
+            f"Source: `{args.source_ref}`. Android API 29 or newer.\n\n"
+            "The Android build, ELF/package checks and selected regressions passed before publication. "
+            "This community port is not an official OpenAI binary. Phone login, TUN networking "
+            "and interactive behavior still need device validation.\n\n"
+            "Install or update with `codex update`, or run:\n\n```sh\n"
+            f"curl -fsSL https://github.com/{REPOSITORY}/releases/latest/download/install.sh | sh\n```\n"
+        ),
+    }
     if not release:
         release = api.repo(
             "releases",
             method="POST",
-            data={
-                "tag_name": tag,
-                "target_commitish": args.source_ref,
-                "name": f"Codex {args.version} for Termux",
-                "draft": True,
-                "prerelease": False,
-                "body": (
-                    f"Native Android ARM64 build of official [{info['upstream_ref']}]"
-                    f"(https://github.com/openai/codex/commit/{info['upstream_commit']}).\n\n"
-                    f"Source: `{args.source_ref}`. Android API 29 or newer.\n\n"
-                    "The Android build, ELF/package checks and selected regressions passed before publication. "
-                    "This community port is not an official OpenAI binary. Phone login, TUN networking "
-                    "and interactive behavior still need device validation.\n\n"
-                    "Install or update with `codex update`, or run:\n\n```sh\n"
-                    f"curl -fsSL https://github.com/{REPOSITORY}/releases/latest/download/install.sh | sh\n```\n"
-                ),
-            },
+            data=metadata,
         )
+    else:
+        release = api.repo(f"releases/{release['id']}", method="PATCH", data=metadata)
     for name in ASSETS:
         path = args.artifact_dir / name
         digest = hashlib.sha256(path.read_bytes()).hexdigest()

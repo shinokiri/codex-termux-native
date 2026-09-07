@@ -41,7 +41,11 @@ impl HistoryCell for UpdateAvailableHistoryCell {
                 "✨\u{200A}".bold().cyan(),
                 "Update available!".bold().cyan(),
                 " ",
-                format!("{CODEX_CLI_VERSION} -> {}", self.latest_version).bold(),
+                format!(
+                    "{CODEX_CLI_VERSION} -> {}",
+                    crate::update_versions::display_version(&self.latest_version)
+                )
+                .bold(),
             ],
             update_instruction,
             "",

@@ -52,7 +52,8 @@ jobs:
           or (package(codex-tui) and
             (test(session_resume::tests::) or test(update_action::tests::)
               or test(update_versions::tests::) or test(updates_cache::tests::)
-              or test(update_prompt::tests::)))'
+              or test(update_prompt::tests::)
+              or test(standalone_unix_update_available_history_cell_snapshot)))'
       - name: Test the update command entry point
         run: just test --locked -p codex-cli --test update
       - name: Check update-channel helpers with Clippy
