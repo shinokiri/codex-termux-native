@@ -199,7 +199,7 @@ impl WidgetRef for &UpdatePromptScreen {
             format!(
                 "{current} -> {latest}",
                 current = self.current_version,
-                latest = crate::update_versions::display_version(&self.latest_version)
+                latest = crate::version::display_version(&self.latest_version)
             )
             .dim(),
         ]));

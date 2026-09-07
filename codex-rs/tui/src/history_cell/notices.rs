@@ -43,7 +43,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
                 " ",
                 format!(
                     "{CODEX_CLI_VERSION} -> {}",
-                    crate::update_versions::display_version(&self.latest_version)
+                    crate::version::display_version(&self.latest_version)
                 )
                 .bold(),
             ],
