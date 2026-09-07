@@ -1219,7 +1219,10 @@ fn standalone_unix_update_available_history_cell_snapshot() {
         assert_eq!(cell.current_version, CODEX_CLI_VERSION);
         cell.current_version = "0.0.0";
         let rendered = render_lines(&cell.display_lines(/*width*/ 110)).join("\n");
-        insta::assert_snapshot!(rendered);
+        insta::assert_snapshot!(
+            "standalone_unix_update_available_history_cell_snapshot",
+            rendered
+        );
         assert_eq!(cell.raw_lines()[1], Line::from("0.0.0 -> 9.9.9"));
     }
 }
