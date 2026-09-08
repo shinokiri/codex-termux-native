@@ -1,6 +1,67 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+#[cfg(unix)]
+#[test]
+fn installer_download_must_finish_before_execution() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    let root = tempfile::tempdir().expect("downloader fixture");
+    let curl = root.path().join("curl");
+    let shell = if cfg!(target_os = "android") {
+        "/system/bin/sh"
+    } else {
+        "/bin/sh"
+    };
+    std::fs::write(
+        &curl,
+        format!(
+            "#!{shell}\n\
+             if [ \"$CODEX_TEST_DOWNLOAD_BODY\" = 1 ]; then\n\
+             cat <<'INSTALLER'\n\
+             test \"$CODEX_NON_INTERACTIVE\" = 1 || exit 42\n\
+             printf 'installer invoked\\n'\n\
+             exit \"$CODEX_TEST_INSTALL_STATUS\"\n\
+             INSTALLER\n\
+             fi\n\
+             exit \"$CODEX_TEST_DOWNLOAD_STATUS\"\n"
+        ),
+    )
+    .expect("fake curl");
+    std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755))
+        .expect("executable downloader");
+    let current_path = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::iter::once(root.path().to_owned()).chain(std::env::split_paths(&current_path)),
+    )
+    .expect("fixture PATH");
+    for (download_status, body, install_status, expected_status, expected_output) in [
+        (0, 1, 0, 0, "installer invoked\n"),
+        (0, 1, 17, 17, "installer invoked\n"),
+        (35, 0, 0, 35, ""),
+        // A failed transfer must not execute even a runnable partial script.
+        (35, 1, 0, 35, ""),
+    ] {
+        let output = Command::new("sh")
+            .args(["-c", INSTALL_COMMAND])
+            .env("PATH", &path)
+            .env("CODEX_TEST_DOWNLOAD_STATUS", download_status.to_string())
+            .env("CODEX_TEST_DOWNLOAD_BODY", body.to_string())
+            .env("CODEX_TEST_INSTALL_STATUS", install_status.to_string())
+            .output()
+            .expect("run native update command");
+        assert_eq!(
+            (output.status.code(), output.stdout, output.stderr),
+            (
+                Some(expected_status),
+                expected_output.as_bytes().to_vec(),
+                Vec::<u8>::new(),
+            )
+        );
+    }
+}
+
 #[test]
 fn local_revision_orders_updates_without_changing_the_runtime_manifest() {
     let root = tempfile::tempdir().expect("package directory");

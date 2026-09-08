@@ -42,7 +42,9 @@ updates` workflow implements the release pipeline:
    sources, skipping the remaining V8 compiler dependencies. A changed locked V8
    version still requires reviewing the source pin and binding patch.
 4. Create a draft GitHub release, upload the package, checksums and installer,
-   verify their digests, then publish it as the latest Termux release. A draft
+   verify their digests, then publish it. Only a newer official version or
+   packaging revision becomes latest; a late older build cannot move the channel
+   backwards. The publisher re-reads latest after uploading the assets. A draft
    retry updates its source identity before uploading replacement assets. An
    existing tag must already match the validated source. Failures leave the
    previous published release available to clients.
@@ -73,7 +75,9 @@ and use the release workflow's `retry` input; an existing prepared source branch
 is reused on retry. To publish a new Termux fix for the same official version,
 increase the `revision` input. Published release assets are not replaced.
 Pushing a change to the release controller also retries the current attempt;
-unchanged scheduled checks do not.
+unchanged scheduled checks do not. The release concurrency group queues pending
+runs with GitHub's `queue: max`, so a scheduled check does not replace a pending
+repair. Up to 100 runs may wait; GitHub rejects additional runs when full.
 Source preparation aligns versions for explicit and implicit workspace members
 and runs `just bazel-lock-update` before committing. Retries preserve source
 fixes already on the prepared branch while refreshing these generated locks.
@@ -86,6 +90,8 @@ run separately with the same build targets so an empty selection fails without
 rebuilding a different feature selection. The CLI entry-point test launches a
 standalone-layout binary with a local fake downloader, executes the returned
 installer, and checks both success and failure without downloading an update.
+The native update-command regression also covers empty and partial failed
+downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
 ## Client update experience
@@ -108,6 +114,9 @@ and package-layout adaptations. It verifies downloads and switches the complete
 CLI/code-mode-host package together. Failed downloads leave the current version
 selected. Sessions and authentication files are not replaced. Ripgrep continues
 to come from Termux rather than a bundled Linux binary.
+`codex update` first downloads the entire installer into its shell process and
+executes it only if curl succeeds. It preserves both download and installer
+failure statuses without adding retries or temporary script files.
 
 The first installation of an update-capable release uses:
 

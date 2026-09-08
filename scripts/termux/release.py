@@ -175,6 +175,13 @@ def verified_package(directory, version, commit):
     return info
 
 
+def release_key(tag):
+    match = re.fullmatch(r"termux-v(\d+)\.(\d+)\.(\d+)\+termux\.([1-9]\d*)", tag)
+    if not match:
+        raise RuntimeError(f"Cannot compare an unexpected release tag: {tag}")
+    return tuple(map(int, match.groups()))
+
+
 def publish(args, api):
     info = verified_package(args.artifact_dir, args.version, args.source_ref)
     tag = f"termux-v{args.version}"
@@ -235,10 +242,14 @@ def publish(args, api):
         )
         if asset.get("digest") != f"sha256:{digest}":
             raise RuntimeError(f"Uploaded asset checksum did not match: {name}")
+    # Re-read the channel after uploading: an older run may finish after a
+    # newer version or packaging revision was already published.
+    latest = api.repo("releases/latest")
+    make_latest = not latest or release_key(tag) > release_key(latest["tag_name"])
     published = api.repo(
         f"releases/{release['id']}",
         method="PATCH",
-        data={"draft": False, "make_latest": "true"},
+        data={"draft": False, "make_latest": "true" if make_latest else "false"},
     )
     print(f"Published: {published['html_url']}")
 

@@ -22,9 +22,12 @@ class FakeGitHub:
         self.fail_upload = fail_upload
         self.published = False
         self.tagged_commit = None
+        self.latest = None
 
     def repo(self, path, *, method="GET", data=None):
         if method == "GET":
+            if path == "releases/latest":
+                return self.latest
             if path.startswith("git/ref/tags/"):
                 return (
                     {"object": {"type": "commit", **self.tagged_commit}}
@@ -46,6 +49,8 @@ class FakeGitHub:
                 return self.release
             assert {asset["name"] for asset in self.release["assets"]} == set(ASSETS)
             self.published = True
+            if data["make_latest"] == "true":
+                self.latest = self.release
             return {"html_url": "https://github.com/example/release"}
         raise AssertionError((path, method))
 
@@ -62,6 +67,49 @@ class FakeGitHub:
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_publish_only_promotes_a_newer_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for asset in ASSETS:
+                (root / asset).write_bytes(b"publication fixture")
+            args = SimpleNamespace(
+                artifact_dir=root, version="0.153.4+termux.10", source_ref="c" * 40
+            )
+            info = {
+                "cli_version": "0.153.4",
+                "upstream_ref": "rust-v0.153.4",
+                "upstream_commit": "a" * 40,
+            }
+            tag = f"termux-v{args.version}"
+            for latest_tag, promote in (
+                (None, True),
+                ("termux-v0.153.4+termux.2", True),
+                ("termux-v0.153.4+termux.11", False),
+                ("termux-v0.153.5+termux.1", False),
+                ("termux-v0.154.0+termux.1", False),
+                ("termux-v0.99.0+termux.99", True),
+            ):
+                with self.subTest(latest_tag=latest_tag):
+                    api = FakeGitHub()
+                    api.latest = {"tag_name": latest_tag} if latest_tag else None
+                    api.repo = Mock(wraps=api.repo)
+                    with patch(
+                        "scripts.termux.release.verified_package", return_value=info
+                    ):
+                        publish(args, api)
+                    self.assertTrue(api.published)
+                    self.assertEqual(
+                        api.latest["tag_name"], tag if promote else latest_tag
+                    )
+                    # Refresh latest immediately before the final publish call.
+                    self.assertEqual(
+                        api.repo.call_args_list[-2].args, ("releases/latest",)
+                    )
+                    self.assertEqual(
+                        api.repo.call_args.kwargs["data"],
+                        {"draft": False, "make_latest": "true" if promote else "false"},
+                    )
+
     def test_failed_job_rerun_resumes_preparation_after_the_attempt_was_recorded(self):
         api = Mock(token="local-fixture")
         api.request.return_value = {
