@@ -12,7 +12,7 @@ on:
       revision:
         description: "Internal package revision; Codex keeps the official version"
         type: string
-        default: "2"
+        default: "3"
       retry:
         description: "Validate the current prepared source again after fixing a failure"
         type: boolean
@@ -52,7 +52,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '2' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '3' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -73,7 +73,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '2' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '3' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
