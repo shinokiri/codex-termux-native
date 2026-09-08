@@ -79,9 +79,11 @@ and runs `just bazel-lock-update` before committing. Retries preserve source
 fixes already on the prepared branch while refreshing these generated locks.
 Unchanged release checks finish before installing build tools.
 
-The CLI regression job disables test-profile debug assertions to compile the
+The release controller checks formatting before starting native and CLI regression
+compilation. The CLI regression job disables test-profile debug assertions to compile the
 release-only update paths, while leaving optimization off. Update-popup tests
-run separately so an empty selection fails. The CLI entry-point test launches a
+run separately with the same build targets so an empty selection fails without
+rebuilding a different feature selection. The CLI entry-point test launches a
 standalone-layout binary with a local fake downloader, executes the returned
 installer, and checks both success and failure without downloading an update.
 The existing daemon tests run in the same job.
