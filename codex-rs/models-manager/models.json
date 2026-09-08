@@ -2,7 +2,6 @@
   "models": [
     {
       "slug": "gpt-6-astra",
-      "supports_experimental_context": true,
       "prefer_websockets": true,
       "support_verbosity": true,
       "default_verbosity": "low",

@@ -208,9 +208,8 @@ impl App {
             return;
         }
 
-        let max_rows = crate::resize_reflow_cap::resize_reflow_max_rows(
-            self.local_settings.terminal_resize_reflow(),
-        );
+        let max_rows =
+            crate::resize_reflow_cap::resize_reflow_max_rows(self.config.terminal_resize_reflow);
         if let Some(buffer) = &mut self.initial_history_replay_buffer {
             if let Some(max_rows) = max_rows {
                 Self::buffer_initial_history_replay_display_lines(buffer, display, max_rows);
@@ -255,9 +254,7 @@ impl App {
     }
 
     fn resize_reflow_max_rows(&self) -> Option<usize> {
-        crate::resize_reflow_cap::resize_reflow_max_rows(
-            self.local_settings.terminal_resize_reflow(),
-        )
+        crate::resize_reflow_cap::resize_reflow_max_rows(self.config.terminal_resize_reflow)
     }
 
     pub(super) fn update_visible_history_rows(&mut self, screen_size: Size) {

@@ -90,7 +90,6 @@ pub(crate) fn spawn_search(
                         "task-title-search-{request_generation}"
                     )),
                     params: ThreadListParams {
-                        originators: None,
                         cursor: None,
                         limit: Some(MAX_SEARCH_RESULTS),
                         sort_key: Some(ThreadSortKey::UpdatedAt),

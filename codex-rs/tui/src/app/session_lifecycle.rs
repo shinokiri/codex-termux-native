@@ -139,7 +139,7 @@ impl App {
             if let Some(primary_thread_id) = self.primary_thread_id {
                 self.refresh_agent_picker_threads(app_server, primary_thread_id);
             }
-            self.chat_widget.open_feature_enable_prompt(Feature::Collab);
+            self.chat_widget.open_multi_agent_enable_prompt();
             return;
         }
 
@@ -376,7 +376,6 @@ impl App {
 
         let (session, turns, live_attached) = match app_server
             .resume_thread(
-                &self.local_settings,
                 self.config.clone(),
                 thread_id,
                 crate::app_server_session::ResumeModelSettings::PreserveExistingThread,
@@ -412,7 +411,6 @@ impl App {
                         /*turn_cursor*/ None,
                         /*item_cursor*/ None,
                         Some(&self.config),
-                        Some(&self.local_settings),
                         crate::app_server_session::HistoryHydrationScope::Initial,
                     )
                     .await
@@ -446,7 +444,6 @@ impl App {
                 (session, turns, false)
             }
         };
-        self.agents_overview.activity.remove(&thread_id);
         let recap_progress =
             if live_attached && let Some(channel) = self.thread_event_channels.remove(&thread_id) {
                 let store = channel.store.lock().await;
@@ -475,7 +472,6 @@ impl App {
     /// This helper copies every known nickname/role from `AgentNavigationState` into the
     /// replacement widget so that replayed collab items render agent names immediately.
     pub(super) fn replace_chat_widget(&mut self, mut chat_widget: ChatWidget) {
-        chat_widget.cyber_policy_notice = self.chat_widget.cyber_policy_notice.clone();
         self.commit_animation = None;
         // Transfer the last-written terminal title to the replacement widget
         // so it knows what OSC title is currently displayed. Without this, the
@@ -486,7 +482,6 @@ impl App {
             chat_widget.last_terminal_title = previous_terminal_title;
         }
         chat_widget.remote_connection = self.chat_widget.remote_connection.clone();
-        chat_widget.set_local_worktree_operations(self.chat_widget.local_worktree_operations);
         chat_widget.set_agents_navigation_enabled(matches!(
             self.app_server_target,
             AppServerTarget::LocalDaemon { .. }
@@ -704,7 +699,6 @@ impl App {
     pub(super) fn reset_thread_event_state(&mut self) {
         self.abort_all_thread_event_listeners();
         self.thread_event_channels.clear();
-        self.agents_overview.activity.clear();
         self.agent_navigation.clear();
         self.side_threads.clear();
         self.active_thread_id = None;
@@ -803,18 +797,8 @@ impl App {
             }
             Err(err) if self.recover_transport_error(&err) => {}
             Err(err) => {
-                let warnings = self
-                    .transcript_cells
-                    .iter()
-                    .find_map(|cell| {
-                        cell.as_any()
-                            .downcast_ref::<history_cell::StartupWarningsCell>()
-                    })
-                    .filter(|cell| cell.pending_header)
-                    .map(|cell| format!("\n\nStartup warnings:\n{}", cell.messages.join("\n")))
-                    .unwrap_or_default();
                 return Err(color_eyre::eyre::eyre!(
-                    "Failed to start a fresh session through the app server: {err}{warnings}"
+                    "Failed to start a fresh session through the app server: {err}"
                 ));
             }
         }
@@ -832,18 +816,10 @@ impl App {
         // Start a fresh in-memory session while preserving resumability via persisted rollout
         // history. If an initial message is provided, `enqueue_primary_thread_session` suppresses it
         // until the new session is configured and any replayed turns have been rendered.
-        let mut config = match self.load_new_session_config(app_server).await {
-            Ok(config) => config,
-            Err(err) => {
-                if let Some(message) = initial_user_message {
-                    self.chat_widget.restore_user_message_to_composer(message);
-                }
-                self.chat_widget
-                    .add_error_message(format!("Failed to read new session defaults: {err}"));
-                tui.frame_requester().schedule_frame();
-                return;
-            }
-        };
+        self.refresh_in_memory_config_from_disk_best_effort("starting a new thread")
+            .await;
+        let model = self.chat_widget.current_model().to_string();
+        let mut config = self.fresh_session_config();
         apply_managed_new_thread_defaults(
             &mut config,
             app_server.managed_new_thread_defaults(),
@@ -856,9 +832,17 @@ impl App {
             self.chat_widget.thread_name(),
             self.chat_widget.rollout_path().as_deref(),
         );
+        self.shutdown_current_thread(app_server).await;
+        let tracked_thread_ids: Vec<ThreadId> =
+            self.thread_event_channels.keys().copied().collect();
+        for thread_id in tracked_thread_ids {
+            if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
+                tracing::warn!("failed to unsubscribe tracked thread {thread_id}: {err}");
+            }
+        }
+        self.config = config.clone();
         match app_server
             .start_thread_with_session_start_source(
-                &self.local_settings,
                 &config,
                 session_start_source,
                 /*remote_cwd_override*/ None,
@@ -866,17 +850,6 @@ impl App {
             .await
         {
             Ok(mut started) => {
-                self.shutdown_current_thread(app_server).await;
-                let tracked_thread_ids: Vec<ThreadId> =
-                    self.thread_event_channels.keys().copied().collect();
-                for thread_id in tracked_thread_ids {
-                    if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
-                        tracing::warn!("failed to unsubscribe tracked thread {thread_id}: {err}");
-                    }
-                }
-                self.local_settings = crate::local_settings::LocalSettings::from(&config);
-                self.config = config;
-
                 let name_error = if let Some(name) = new_thread_name {
                     match app_server
                         .thread_set_name(started.session.thread_id, name.clone())
@@ -925,9 +898,7 @@ impl App {
                 self.chat_widget.add_error_message(format!(
                     "Failed to start a fresh session through the app server: {err}"
                 ));
-                if let Some(message) = initial_user_message {
-                    self.chat_widget.restore_user_message_to_composer(message);
-                }
+                self.config.model = Some(model);
             }
         }
         tui.frame_requester().schedule_frame();
@@ -1115,7 +1086,7 @@ impl App {
             return Ok(AppRunControl::Continue);
         }
 
-        let (mut resume_config, local_settings) = match self
+        let mut resume_config = match self
             .resume_config_for_target(tui, app_server, &target_session)
             .await
         {
@@ -1135,7 +1106,6 @@ impl App {
         }
         match app_server
             .resume_thread(
-                &local_settings,
                 resume_config.clone(),
                 target_session.thread_id,
                 self.resume_model_settings(),
@@ -1145,11 +1115,10 @@ impl App {
             Ok(resumed) => {
                 let resumed_thread_id = resumed.session.thread_id;
                 self.shutdown_current_thread(app_server).await;
-                self.local_settings = local_settings;
                 self.config = resume_config;
                 tui.set_notification_settings(
-                    self.local_settings.tui.notification_settings.method,
-                    self.local_settings.tui.notification_settings.condition,
+                    self.config.tui_notifications.method,
+                    self.config.tui_notifications.condition,
                 );
                 self.file_search
                     .update_search_dir(self.config.cwd.to_path_buf());
@@ -1185,7 +1154,7 @@ impl App {
                         .await;
                     }
                     Err(err) => {
-                        self.add_session_picker_error(format!(
+                        self.chat_widget.add_error_message(format!(
                             "Failed to attach to resumed app-server thread: {err}"
                         ));
                     }
@@ -1193,7 +1162,7 @@ impl App {
             }
             Err(err) => {
                 let path_display = target_session.display_label();
-                self.add_session_picker_error(format!(
+                self.chat_widget.add_error_message(format!(
                     "Failed to resume session from {path_display}: {err}"
                 ));
             }

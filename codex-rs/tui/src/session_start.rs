@@ -31,16 +31,15 @@ impl SessionStartAction {
         config: &Config,
         target: &SessionTarget,
     ) -> Result<AppServerStartedThread> {
-        let local_settings = crate::local_settings::LocalSettings::from(config);
         match self {
             Self::Resume(settings) => {
                 app_server
-                    .resume_thread(&local_settings, config.clone(), target.thread_id, settings)
+                    .resume_thread(config.clone(), target.thread_id, settings)
                     .await
             }
             Self::Fork => {
                 app_server
-                    .fork_thread(&local_settings, config.clone(), target.thread_id)
+                    .fork_thread(config.clone(), target.thread_id)
                     .await
             }
         }
