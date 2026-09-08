@@ -62,11 +62,9 @@ fn update_runs_standalone_installer_and_reports_its_exit_status() -> Result<()> 
         ),
     )?;
     std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755))?;
-    let path = std::env::join_paths(
-        std::iter::once(bin).chain(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        )),
-    )?;
+    let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    )))?;
     let log = root.path().join("installer.log");
     let url = if cfg!(target_os = "android") {
         "https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh"
