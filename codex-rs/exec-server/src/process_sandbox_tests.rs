@@ -1,13 +1,9 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
-use codex_exec_server_protocol::JSONRPCErrorError;
 #[cfg(target_os = "macos")]
 use codex_network_proxy::ManagedNetworkSandboxContext;
-use codex_network_proxy::NetworkPolicyAuditObserver;
-use codex_network_proxy::NetworkPolicyDecider;
 use codex_network_proxy::NetworkProxyConfig;
 use codex_network_proxy::PROXY_ATTRIBUTION_TOKEN_ENV_KEY;
 use codex_network_proxy::RemoteNetworkProxyConfig;
@@ -27,34 +23,15 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::time::timeout;
 
-use super::PreparedExecRequest;
-use super::prepare_exec_request_with_telemetry;
+use super::prepare_exec_request;
 #[cfg(unix)]
 use crate::CODEX_ARG0_EXEC_HELPER_ARG1;
 use crate::ExecParams;
+#[cfg(any(unix, windows))]
 use crate::ExecServerRuntimePaths;
 #[cfg(any(unix, windows))]
 use crate::FileSystemSandboxContext;
 use crate::ProcessId;
-use crate::process_telemetry::ProcessTelemetry;
-
-async fn prepare_exec_request(
-    params: &ExecParams,
-    env: HashMap<String, String>,
-    runtime_paths: Option<&ExecServerRuntimePaths>,
-    network_policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
-    network_policy_audit_observer: Option<NetworkPolicyAuditObserver>,
-) -> Result<PreparedExecRequest, JSONRPCErrorError> {
-    prepare_exec_request_with_telemetry(
-        params,
-        env,
-        runtime_paths,
-        network_policy_decider,
-        network_policy_audit_observer,
-        &ProcessTelemetry::default(),
-    )
-    .await
-}
 
 #[cfg(unix)]
 #[tokio::test]
@@ -72,7 +49,6 @@ async fn sandbox_request_wraps_native_argv_on_executor() {
         cwd_uri.clone(),
     );
     let params = ExecParams {
-        metadata: Default::default(),
         process_id: ProcessId::from("process-1"),
         argv: vec![
             "/bin/bash".to_string(),
@@ -147,7 +123,6 @@ async fn sandbox_request_routes_custom_arg0_to_inner_helper() {
         cwd_uri.clone(),
     );
     let params = ExecParams {
-        metadata: Default::default(),
         process_id: ProcessId::from("process-custom-arg0"),
         argv: vec!["/bin/sh".to_string(), "-c".to_string(), "true".to_string()],
         cwd: cwd_uri,
@@ -210,7 +185,6 @@ async fn sandbox_request_allows_prepared_managed_proxy_port() {
         cwd_uri.clone(),
     );
     let params = ExecParams {
-        metadata: Default::default(),
         process_id: ProcessId::from("process-managed-network"),
         argv: vec!["/usr/bin/true".to_string()],
         cwd: cwd_uri,
@@ -256,7 +230,6 @@ async fn native_request_preserves_native_launch_fields() {
     let cwd_uri = PathUri::from_abs_path(&cwd);
     let env = HashMap::from([("TEST_ENV".to_string(), "value".to_string())]);
     let params = ExecParams {
-        metadata: Default::default(),
         process_id: ProcessId::from("process-1"),
         argv: vec!["echo".to_string(), "hello".to_string()],
         cwd: cwd_uri,
@@ -302,7 +275,6 @@ async fn native_request_handles_remote_proxy_config_for_platform() {
     let proxy_config = RemoteNetworkProxyConfig::from_effective_config(&config)
         .expect("supported remote proxy config");
     let params = ExecParams {
-        metadata: Default::default(),
         process_id: ProcessId::from("process-remote-proxy"),
         argv: vec!["echo".to_string(), "hello".to_string()],
         cwd: PathUri::from_abs_path(&cwd),
@@ -386,7 +358,6 @@ async fn disabled_remote_proxy_config_is_rejected_before_exporting_ports() {
         RemoteNetworkProxyConfig::from_effective_config(&NetworkProxyConfig::default())
             .expect("serializable disabled proxy config");
     let params = ExecParams {
-        metadata: Default::default(),
         process_id: ProcessId::from("process-disabled-remote-proxy"),
         argv: vec!["echo".to_string(), "hello".to_string()],
         cwd: PathUri::from_abs_path(&cwd),
@@ -448,7 +419,6 @@ async fn managed_network_honors_windows_sandbox_level(windows_sandbox_level: Win
     })
     .expect("supported remote proxy config");
     let params = ExecParams {
-        metadata: Default::default(),
         process_id: ProcessId::from("process-managed-network"),
         argv: vec!["cmd.exe".to_string(), "/c".to_string(), "exit".to_string()],
         cwd: cwd_uri,

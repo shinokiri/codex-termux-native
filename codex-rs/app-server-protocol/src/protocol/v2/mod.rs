@@ -1,7 +1,6 @@
 mod shared;
 
 mod account;
-mod application;
 mod apps;
 mod attestation;
 mod bedrock;
@@ -36,7 +35,6 @@ mod turn;
 mod windows_sandbox;
 
 pub use account::*;
-pub use application::*;
 pub use apps::*;
 pub use attestation::*;
 pub use bedrock::*;

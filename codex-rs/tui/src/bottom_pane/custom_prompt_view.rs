@@ -206,8 +206,7 @@ impl BottomPaneView for CustomPromptView {
     }
 
     fn prefer_esc_to_handle_key_event(&self) -> bool {
-        self.textarea
-            .should_handle_vim_insert_escape(KeyEvent::from(KeyCode::Esc))
+        self.textarea.uses_vim_insert_cursor() || self.textarea.is_vim_operator_pending()
     }
 
     fn is_complete(&self) -> bool {
@@ -354,7 +353,7 @@ impl Renderable for CustomPromptView {
 
         let hint_y = hint_blank_y.saturating_add(1);
         if hint_y < area.y.saturating_add(area.height) {
-            let mut hint_line = if self.prefer_esc_to_handle_key_event() {
+            let mut hint_line = if self.textarea.uses_vim_insert_cursor() {
                 accept_cancel_hint_line(
                     Some(key_hint::plain(KeyCode::Enter).into()),
                     "to confirm",

@@ -4,7 +4,6 @@ use codex_protocol::user_input::UserInput;
 use pretty_assertions::assert_eq;
 
 use super::collect_explicit_app_ids;
-use super::collect_explicit_plugin_ids;
 use super::collect_explicit_plugin_mentions;
 use crate::plugins::PluginCapabilitySummary;
 
@@ -78,39 +77,35 @@ fn collect_explicit_app_ids_ignores_non_app_paths() {
 
 #[test]
 fn collect_explicit_plugin_mentions_from_structured_paths() {
-    let expected = plugin("sample@test", "Sample");
     let plugins = vec![
-        expected.clone(),
-        plugin("sample@other-marketplace", "Sample"),
-        plugin("other@test", "alias"),
+        plugin("sample@test", "sample"),
+        plugin("other@test", "other"),
     ];
 
     let mentioned = collect_explicit_plugin_mentions(
         &[UserInput::Mention {
-            name: "alias".to_string(),
+            name: "sample".to_string(),
             path: "plugin://sample@test".to_string(),
         }],
         &plugins,
     );
 
-    assert_eq!(mentioned, vec![expected]);
+    assert_eq!(mentioned, vec![plugin("sample@test", "sample")]);
 }
 
 #[test]
 fn collect_explicit_plugin_mentions_from_linked_text_mentions() {
-    let expected = plugin("sample@test", "Sample");
     let plugins = vec![
-        expected.clone(),
-        plugin("sample@other-marketplace", "Sample"),
-        plugin("other@test", "alias"),
+        plugin("sample@test", "sample"),
+        plugin("other@test", "other"),
     ];
 
     let mentioned = collect_explicit_plugin_mentions(
-        &[text_input("use [@alias](plugin://sample@test)")],
+        &[text_input("use [@sample](plugin://sample@test)")],
         &plugins,
     );
 
-    assert_eq!(mentioned, vec![expected]);
+    assert_eq!(mentioned, vec![plugin("sample@test", "sample")]);
 }
 
 #[test]
@@ -158,20 +153,4 @@ fn collect_explicit_plugin_mentions_ignores_dollar_linked_plugin_mentions() {
     );
 
     assert_eq!(mentioned, Vec::<PluginCapabilitySummary>::new());
-}
-
-#[test]
-fn collect_explicit_plugin_ids_preserves_opaque_ids() {
-    let input = [
-        text_input("use [@same](plugin://selected-one)"),
-        UserInput::Mention {
-            name: "same".to_string(),
-            path: "plugin://selected-two".to_string(),
-        },
-    ];
-
-    assert_eq!(
-        collect_explicit_plugin_ids(&input),
-        HashSet::from(["selected-one".to_string(), "selected-two".to_string()]),
-    );
 }

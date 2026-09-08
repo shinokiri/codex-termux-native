@@ -129,7 +129,7 @@ impl ChatWidget {
     }
 
     pub(super) fn schedule_hook_timer_if_needed(&self) {
-        if self.local_settings.tui.animations
+        if self.config.animations
             && self
                 .active_hook_cell
                 .as_ref()

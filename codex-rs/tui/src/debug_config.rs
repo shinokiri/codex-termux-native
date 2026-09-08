@@ -955,7 +955,6 @@ interrupt_message = false
         };
 
         let requirements_toml = ConfigRequirementsToml {
-            application: None,
             allowed_login_methods: None,
             allowed_chatgpt_workspaces: None,
             cli_auth_credentials_store: None,

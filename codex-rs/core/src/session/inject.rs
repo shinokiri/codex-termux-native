@@ -162,7 +162,3 @@ impl Session {
         self.record_conversation_items(turn_context, &items).await;
     }
 }
-
-#[cfg(test)]
-#[path = "inject_tests.rs"]
-mod tests;

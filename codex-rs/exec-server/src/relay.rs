@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use codex_exec_server_protocol::JSONRPCMessage;
@@ -42,7 +41,6 @@ use crate::relay_proto::RelayResume;
 use crate::relay_proto::relay_message_frame;
 #[cfg(test)]
 use crate::server::ConnectionProcessor;
-use crate::telemetry::ExecutorRegistration;
 use crate::websocket_pong_watchdog::WEBSOCKET_PONG_TIMEOUT;
 use crate::websocket_pong_watchdog::WEBSOCKET_PONG_TIMEOUT_REASON;
 use crate::websocket_pong_watchdog::WebSocketPongWatchdog;
@@ -497,9 +495,6 @@ where
         environment_id,
         executor_registration_id, "Noise executor relay details"
     );
-    let executor_registration =
-        ExecutorRegistration::new(environment_id.clone(), executor_registration_id.clone())
-            .map(Arc::new);
     let (mut websocket_sink, mut websocket_stream) = stream.split();
     let (physical_outgoing_tx, mut physical_outgoing_rx) =
         mpsc::channel::<Vec<u8>>(CHANNEL_CAPACITY);
@@ -691,7 +686,6 @@ where
                                 physical_outgoing_tx.clone(),
                                 closed_stream_tx.clone(),
                                 transport,
-                                executor_registration.clone(),
                             ),
                         );
                     }
