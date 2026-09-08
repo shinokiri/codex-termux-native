@@ -304,7 +304,6 @@ def codex_env(args):
             "CARGO_TARGET_DIR": str(args.work_dir / "codex-target"),
             "CARGO_PROFILE_RELEASE_DEBUG": "0",
             "CARGO_PROFILE_RELEASE_STRIP": "symbols",
-            "CARGO_PROFILE_RELEASE_LTO": "false",
             "CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS": (
                 "-C link-arg=-Wl,-rpath,$ORIGIN/../lib "
                 "-C link-arg=-Wl,-z,max-page-size=16384 "
@@ -418,6 +417,7 @@ def package(args):
             raise RuntimeError(f"Unpackaged native dependency in {binary}: {needed}")
         needed_libraries.update(needed)
         shutil.copy2(binary, stage / "bin" / binary.name)
+        print(f"{name}: {binary.stat().st_size} bytes", flush=True)
     if "libc++_shared.so" in needed_libraries:
         shutil.copy2(
             args.toolchain / "sysroot/usr/lib/aarch64-linux-android/libc++_shared.so",

@@ -3,6 +3,7 @@
 set -eu
 
 RELEASE="${CODEX_RELEASE:-latest}"
+PRUNE_ONLY=false
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
 DEFAULT_PREFER_RELEASES_OPENAI_COM="true"
 PREFER_RELEASES_OPENAI_COM="${CODEX_INSTALLER_USE_RELEASES_OPENAI_COM:-$DEFAULT_PREFER_RELEASES_OPENAI_COM}"
@@ -99,9 +100,15 @@ parse_args() {
         RELEASE="$2"
         shift
         ;;
+      --prune)
+        PRUNE_ONLY=true
+        ;;
       --help | -h)
         cat <<EOF
-Usage: install.sh [--release VERSION]
+Usage: install.sh [--release VERSION] | --prune
+
+  --prune  Termux only: remove old installed packages, keeping only current.
+           Close all Codex processes first. Does not install or download a release.
 
 Environment:
   CODEX_RELEASE          Version to install; overridden by --release.
@@ -766,6 +773,33 @@ cleanup_stale_install_artifacts() {
   fi
 }
 
+prune_installed_releases() {
+  # Explicit maintenance after Codex exits: a running old CLI may still need
+  # to launch its matching code-mode host. Do not prune during normal updates.
+  if [ ! -L "$CURRENT_LINK" ] ||
+    ! releases_path="$(cd "$RELEASES_DIR" && pwd -P)" ||
+    ! current_path="$(cd "$CURRENT_LINK" && pwd -P)"; then
+    echo "Cannot prune without a current standalone installation." >&2
+    return 1
+  fi
+  if [ "$(dirname "$current_path")" != "$releases_path" ] ||
+    [ ! -f "$current_path/codex-package.json" ] ||
+    [ ! -x "$current_path/bin/codex" ] ||
+    [ ! -x "$current_path/bin/codex-code-mode-host" ]; then
+    echo "Current must point to a complete package inside $RELEASES_DIR." >&2
+    return 1
+  fi
+
+  for old_release in "$releases_path"/*; do
+    [ "$old_release" != "$current_path" ] || continue
+    [ -d "$old_release" ] && [ ! -L "$old_release" ] || continue
+    [ -f "$old_release/codex-package.json" ] || continue
+    rm -rf -- "$old_release"
+    step "Removed old package: $(basename "$old_release")"
+  done
+  step "Only the current installed package is retained."
+}
+
 replace_path_with_symlink() {
   link_path="$1"
   link_target="$2"
@@ -1096,9 +1130,6 @@ verify_visible_command() {
 
 parse_args "$@"
 
-require_command mktemp
-require_command tar
-
 case "$(uname -s)" in
   Darwin)
     os="darwin"
@@ -1161,6 +1192,19 @@ else
   fi
 fi
 
+if [ "$PRUNE_ONLY" = "true" ]; then
+  if [ "$IS_TERMUX" != "true" ]; then
+    echo "--prune is supported only by the Termux installer." >&2
+    exit 1
+  fi
+  trap release_install_lock EXIT
+  acquire_install_lock
+  prune_installed_releases
+  exit 0
+fi
+
+require_command mktemp
+require_command tar
 resolve_release
 release_name="$resolved_version-$vendor_target"
 release_dir="$RELEASES_DIR/$release_name"

@@ -129,6 +129,21 @@ codex update
 Older manually unpacked candidates need that initial installation once. The
 installer prints any required PATH setup instructions.
 
+To reclaim old installed packages, close all Codex processes and then use the
+installer's explicit cleanup operation:
+
+```sh
+codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh) &&
+  printf '%s\n' "$codex_installer" | sh -s -- --prune
+```
+
+`--prune` keeps only the package selected by `current`, with no rollback version.
+It uses the existing installer lock and does not download a version, change PATH,
+or remove sessions, authentication or configuration. Normal installation and
+`codex update` retain older packages until this explicit operation, because an
+already-running CLI may still need its matching code-mode host. Do not launch
+another Codex process during cleanup.
+
 ## Status
 
 The first published package, based on official `rust-v0.153.4`, passed the
@@ -275,7 +290,10 @@ The NDK C++ shared library is included only if an
 executable's ELF dependencies require it. ELF checks reject Linux executables and unexpected
 shared-library dependencies. Relative library lookup avoids a launcher that
 rewrites process-wide proxy or dynamic-library environment variables. The
-development build strips symbols and disables release LTO to limit build cost.
+build strips symbols and retains upstream's cross-crate ThinLTO release setting.
+Packaging logs the size of each executable so release size and build time can be
+compared with the previous locally optimized build. Device startup time and
+memory usage still require measurements on Android.
 Only the two delivered binaries and the probe are selected for compilation;
 unrelated CLI binaries such as `logs_client` are not built. V8 builds use Cargo's
 verbose mode to expose Ninja progress, including completed and running tasks

@@ -47,6 +47,78 @@ def release_fixture(root, revision, *, cli_version="0.153.4"):
 
 
 class TermuxInstallerTest(unittest.TestCase):
+    def test_prune_keeps_only_current_without_touching_user_data_or_network(self):
+        with tempfile.TemporaryDirectory(prefix="termux prune ") as temporary:
+            root = Path(temporary)
+            for revision in (1, 2, 3):
+                result, _ = run_installer_in(
+                    root,
+                    "latest",
+                    platform="android",
+                    **release_fixture(root, revision),
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+            codex_home = root / "codex-home"
+            for name in ("sessions/keep.jsonl", "auth.json", "config.toml"):
+                path = codex_home / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name)
+            current = codex_home / "packages/standalone/current"
+            selected = current.resolve()
+            releases = selected.parent
+            unrelated = releases / "unrelated"
+            unrelated.mkdir()
+            (unrelated / "keep").write_text("unrelated")
+            external = root / "external"
+            external.mkdir()
+            (external / "codex-package.json").write_text("{}")
+            (releases / "external-link").symlink_to(external, target_is_directory=True)
+            (root / "requests.log").unlink()
+
+            for _ in range(2):
+                result, requests = run_installer_in(
+                    root, "latest", platform="android", installer_args=("--prune",)
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(requests, [])
+                self.assertEqual(current.resolve(), selected)
+                self.assertEqual(
+                    {path.name for path in releases.iterdir()},
+                    {selected.name, "unrelated", "external-link"},
+                )
+                self.assertTrue((current / "bin/codex-code-mode-host").is_file())
+                self.assertTrue((external / "codex-package.json").is_file())
+                self.assertEqual((unrelated / "keep").read_text(), "unrelated")
+                for name in ("sessions/keep.jsonl", "auth.json", "config.toml"):
+                    self.assertEqual((codex_home / name).read_text(), name)
+
+    def test_prune_preserves_packages_when_current_is_invalid(self):
+        for invalid in ("missing", "outside", "incomplete"):
+            with (
+                self.subTest(current=invalid),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                result, _ = run_installer_in(
+                    root, "latest", platform="android", **release_fixture(root, 1)
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                current = root / "codex-home/packages/standalone/current"
+                installed = current.resolve()
+                if invalid == "incomplete":
+                    (installed / "bin/codex-code-mode-host").unlink()
+                else:
+                    current.unlink()
+                    if invalid == "outside":
+                        current.symlink_to(root / "fixture-1", target_is_directory=True)
+                (root / "requests.log").unlink()
+                result, requests = run_installer_in(
+                    root, "latest", platform="android", installer_args=("--prune",)
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(requests, [])
+                self.assertTrue((installed / "bin/codex").is_file())
+
     def test_upgrade_switches_the_complete_package_and_preserves_user_data(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

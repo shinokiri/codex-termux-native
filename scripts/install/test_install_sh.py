@@ -537,6 +537,7 @@ def run_installer_in(
     platform: str | None = None,
     use_mirror: bool | None = False,
     releases_mode: str = "",
+    installer_args: tuple[str, ...] = (),
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = root / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -696,7 +697,7 @@ def run_installer_in(
             "TRUE" if use_mirror else "false"
         )
     result = subprocess.run(
-        ["/bin/sh", str(INSTALL_SCRIPT)],
+        ["/bin/sh", str(INSTALL_SCRIPT), *installer_args],
         capture_output=True,
         check=False,
         env=env,
