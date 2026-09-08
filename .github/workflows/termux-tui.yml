@@ -46,10 +46,10 @@ jobs:
       - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
         with:
           tool: just@1.51.0,nextest@0.9.143
-      - name: Test exec behavior and CLI and TUI session resume
-        run: >-
-          just test --locked -p codex-exec -p codex-cli -p codex-tui -p codex-install-context -p codex-app-server-daemon --lib --bin codex
-          -E 'package(codex-exec)
+      - name: Test CLI, daemon, resume and release-only updates
+        run: |
+          test_args=(--locked -p codex-exec -p codex-cli -p codex-tui -p codex-install-context -p codex-app-server-daemon --lib --bin codex)
+          just test "${test_args[@]}" -E 'package(codex-exec)
           or package(codex-install-context)
           or package(codex-app-server-daemon)
           or (package(codex-cli) and (test(resume) or test(update)))
@@ -57,8 +57,8 @@ jobs:
             (test(session_resume::tests::) or test(update_action::tests::)
               or test(update_versions::tests::) or test(updates_cache::tests::)
               or test(standalone_unix_update_available_history_cell_snapshot)))'
-      - name: Test release-mode update popup behavior
-        run: just test --locked -p codex-tui --lib -E 'test(update_prompt::tests::)'
+          # Keep the same build targets and features; fail if no popup tests run.
+          just test "${test_args[@]}" -E 'test(update_prompt::tests::)'
       - name: Test the update command entry point
         run: just test --locked -p codex-cli --test update
       - name: Check update-channel helpers with Clippy

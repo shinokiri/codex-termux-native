@@ -104,14 +104,14 @@ jobs:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
   regression:
-    needs: prepare
+    needs: [prepare, format]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/termux-tui.yml
     with:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
   native:
-    needs: prepare
+    needs: [prepare, format]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/termux-native.yml
     with:
