@@ -41,7 +41,11 @@ jobs:
       - name: Validate Termux workflow wiring
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          "$(go env GOPATH)/bin/actionlint" .github/workflows/termux-*.yml
+          # v1.7.12 predates concurrency.queue; GitHub validates this property.
+          # Ignore only its unknown-key diagnostic, retaining all other checks.
+          "$(go env GOPATH)/bin/actionlint" \
+            -ignore '^unexpected key "queue" for "concurrency" section\.' \
+            .github/workflows/termux-*.yml
       - name: Check out the prepared release source
         if: inputs.source_ref != ''
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

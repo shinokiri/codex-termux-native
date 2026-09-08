@@ -12,7 +12,7 @@ on:
       revision:
         description: "Internal package revision; Codex keeps the official version"
         type: string
-        default: "3"
+        default: "4"
       retry:
         description: "Validate the current prepared source again after fixing a failure"
         type: boolean
@@ -30,6 +30,8 @@ permissions:
 
 concurrency:
   group: termux-release-channel
+  # Keep pending repairs when another scheduled check joins the queue.
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -52,7 +54,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '3' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '4' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -73,7 +75,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '3' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '4' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
