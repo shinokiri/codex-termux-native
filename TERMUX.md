@@ -62,12 +62,16 @@ runs. The workflow uses the repository's built-in GitHub token; no
 OpenAI API key or separate hosting service is needed.
 
 Each attempted official version/revision has a small `termux-build-*` tag so a
-failed build does not repeat every five minutes. A failed source application
-retains conflict diagnostics. Fix the adaptation and use the workflow's `retry`
-input; an existing prepared source branch is reused on retry. To publish a new
-Termux fix for the same official version, increase the `revision` input. Published
-release assets are not replaced. Source conflicts and failed CI require a fix
-before that version can reach clients.
+failed build does not repeat every five minutes. `Retry failed Termux releases`
+responds to a failed or timed-out release run with at most two failed-job reruns,
+with a one-minute pause before each retry. GitHub retains successful jobs and
+their artifacts, so retrying publication does not compile Android again. A
+retried prepare job can resume past its original attempt tag. Cancelled runs
+are not retried; a third failed attempt stays failed for maintenance.
+A failed source application retains conflict diagnostics. Fix the adaptation
+and use the release workflow's `retry` input; an existing prepared source branch
+is reused on retry. To publish a new Termux fix for the same official version,
+increase the `revision` input. Published release assets are not replaced.
 Pushing a change to the release controller also retries the current attempt;
 unchanged scheduled checks do not.
 Source preparation aligns versions for explicit and implicit workspace members
@@ -75,7 +79,18 @@ and runs `just bazel-lock-update` before committing. Retries preserve source
 fixes already on the prepared branch while refreshing these generated locks.
 Unchanged release checks finish before installing build tools.
 
+The CLI regression job disables test-profile debug assertions to compile the
+release-only update paths, while leaving optimization off. Update-popup tests
+run separately so an empty selection fails. The CLI entry-point test launches a
+standalone-layout binary with a local fake downloader, executes the returned
+installer, and checks both success and failure without downloading an update.
+The existing daemon tests run in the same job.
+
 ## Client update experience
+
+The Android daemon updater uses the same native release channel as `codex update`
+and resolves `sh` through Termux's `PATH`. Its installer is non-interactive.
+This does not change PID detection or enable remote control automatically.
 
 Android builds check this repository's completed releases, display the existing
 update prompt, and run the native installer through `codex update`. The version

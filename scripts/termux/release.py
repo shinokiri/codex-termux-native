@@ -92,7 +92,10 @@ def prepare(args, api):
         return
     marker = f"termux-build-{tag}-r{args.revision}"
     previous = api.repo(f"git/ref/tags/{marker}")
-    if previous and not args.retry and not args.dry_run:
+    # A failed-job rerun keeps GITHUB_RUN_ID and the original source. Let a
+    # retried prepare job resume even if its first attempt already wrote a tag.
+    retry = args.retry or int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")) > 1
+    if previous and not retry and not args.dry_run:
         write_outputs(
             build="false", reason="already-attempted-use-retry-for-a-failed-run"
         )

@@ -9,6 +9,7 @@ on:
       - "TERMUX.md"
       - ".github/workflows/termux-build.yml"
       - ".github/workflows/termux-release.yml"
+      - ".github/workflows/termux-release-retry.yml"
       - ".github/workflows/termux-upstream.yml"
       - "scripts/termux/**"
   workflow_dispatch:

@@ -1,0 +1,39 @@
+name: Retry failed Termux releases
+
+on:
+  workflow_run:
+    workflows: ["Termux release updates"]
+    types: [completed]
+
+permissions:
+  actions: write
+
+concurrency:
+  group: termux-release-retry-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    if: >-
+      github.repository == 'shinokiri/codex-termux-native' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'termux/native' &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'timed_out') &&
+      github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Keep successful jobs, their source outputs and the Android artifact.
+      # Two automatic retries allow transient failures to recover without an
+      # unbounded rebuild loop. An explicit cancellation is never retried.
+      - name: Retry failed jobs after a short delay
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          sleep 60
+          if [ "$(gh api "repos/$GH_REPO/actions/runs/$RELEASE_RUN_ID" --jq '.status')" = "completed" ]; then
+            gh run rerun "$RELEASE_RUN_ID" --failed
+          fi

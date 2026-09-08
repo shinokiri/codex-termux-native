@@ -2,14 +2,16 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import tarfile
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
-from scripts.termux.release import ASSETS, publish
+from scripts.termux.release import ASSETS, prepare, publish
 from scripts.termux.release_source import align_workspace_versions
 from scripts.termux.test_installer import release_fixture
 
@@ -60,6 +62,75 @@ class FakeGitHub:
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_failed_job_rerun_resumes_preparation_after_the_attempt_was_recorded(self):
+        api = Mock(token="local-fixture")
+        api.request.return_value = {
+            "tag_name": "rust-v0.153.4",
+            "draft": False,
+            "prerelease": False,
+        }
+        refs = {}
+
+        def repository(path, method="GET", data=None):
+            if method == "POST":
+                self.assertEqual(path, "git/refs")
+                ref = data["ref"].removeprefix("refs/")
+                refs[ref] = {"object": {"sha": data["sha"]}}
+                return refs[ref]
+            return refs.get(path.removeprefix("git/ref/"))
+
+        api.repo.side_effect = repository
+        args = SimpleNamespace(
+            revision=3,
+            retry=False,
+            dry_run=False,
+            check_only=False,
+            port_ref="HEAD",
+            work_dir=Path("unused"),
+        )
+        with (
+            patch.dict(os.environ, {"GITHUB_RUN_ATTEMPT": "1"}),
+            patch("scripts.termux.release.git", return_value="a" * 40),
+            patch("scripts.termux.release.assemble") as assemble,
+            patch("scripts.termux.release.subprocess.run") as push,
+            patch("scripts.termux.release.write_outputs") as outputs,
+        ):
+            assemble.side_effect = HTTPError(
+                "source", 503, "temporary failure", {}, None
+            )
+            with self.assertRaises(HTTPError):
+                prepare(args, api)
+            push.assert_not_called()
+            # Ordinary scheduled checks still deduplicate a recorded attempt.
+            args.check_only = True
+            prepare(args, api)
+            outputs.assert_called_with(
+                build="false",
+                reason="already-attempted-use-retry-for-a-failed-run",
+            )
+            assemble.assert_called_once()
+            # GitHub reruns the failed prepare job with the original arguments.
+            with patch.dict(os.environ, {"GITHUB_RUN_ATTEMPT": "2"}):
+                prepare(args, api)
+                outputs.assert_called_with(build="true")
+                args.check_only = False
+                assemble.side_effect = None
+                assemble.return_value = "b" * 40
+                prepare(args, api)
+            push.assert_called_once()
+            outputs.assert_called_with(
+                build="true",
+                source_ref="b" * 40,
+                version="0.153.4+termux.3",
+                release_tag="termux-v0.153.4+termux.3",
+            )
+            self.assertEqual(len(refs), 1)
+            # A published release is skipped even in a retried job.
+            refs["releases/tags/termux-v0.153.4%2Btermux.3"] = {"draft": False}
+            with patch.dict(os.environ, {"GITHUB_RUN_ATTEMPT": "3"}):
+                prepare(args, api)
+            outputs.assert_called_with(build="false", reason="already-published")
+
     def test_publish_waits_for_all_assets_and_checks_the_built_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

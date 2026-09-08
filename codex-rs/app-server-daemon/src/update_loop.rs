@@ -34,8 +34,11 @@ use crate::managed_install::resolved_managed_codex_bin;
 const INITIAL_UPDATE_DELAY: Duration = Duration::from_secs(5 * 60);
 const RESTART_RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(60 * 60);
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "android")))]
 const INSTALL_URL: &str = "https://chatgpt.com/codex/install.sh";
+#[cfg(target_os = "android")]
+const INSTALL_URL: &str =
+    "https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh";
 #[cfg(windows)]
 const INSTALL_URL: &str = "https://chatgpt.com/codex/install.ps1";
 
@@ -177,8 +180,14 @@ async fn install_latest_standalone(http: &impl InstallerHttp) -> Result<()> {
 
     #[cfg(unix)]
     let mut command = {
-        let mut command = Command::new("/bin/sh");
+        let mut command = Command::new(if cfg!(target_os = "android") {
+            "sh"
+        } else {
+            "/bin/sh"
+        });
         command.arg("-s");
+        #[cfg(target_os = "android")]
+        command.env("CODEX_NON_INTERACTIVE", "1");
         command
     };
     #[cfg(windows)]
