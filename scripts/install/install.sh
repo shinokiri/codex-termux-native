@@ -789,11 +789,23 @@ prune_installed_releases() {
     echo "Current must point to a complete package inside $RELEASES_DIR." >&2
     return 1
   fi
+  case "$(basename "$current_path")" in
+    .staging.*)
+      echo "Current points to an unfinished installation; cannot prune." >&2
+      return 1
+      ;;
+  esac
+
+  cleanup_stale_install_artifacts
 
   for old_release in "$releases_path"/*; do
     [ "$old_release" != "$current_path" ] || continue
     [ -d "$old_release" ] && [ ! -L "$old_release" ] || continue
-    [ -f "$old_release/codex-package.json" ] || continue
+    if [ ! -f "$old_release/codex-package.json" ]; then
+      # Older standalone installs use the flat platform-npm layout.
+      [ -x "$old_release/codex" ] &&
+        [ -x "$old_release/codex-resources/rg" ] || continue
+    fi
     rm -rf -- "$old_release"
     step "Removed old package: $(basename "$old_release")"
   done

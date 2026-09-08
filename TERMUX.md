@@ -138,8 +138,11 @@ codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/re
 ```
 
 `--prune` keeps only the package selected by `current`, with no rollback version.
-It uses the existing installer lock and does not download a version, change PATH,
-or remove sessions, authentication or configuration. Normal installation and
+It removes older package and legacy platform-npm installs, along with temporary
+files left by interrupted installations. It validates `current` before cleanup
+and leaves unrecognized directories alone. It uses the existing installer lock
+and does not download a version, change PATH, or remove sessions, authentication
+or configuration. Normal installation and
 `codex update` retain older packages until this explicit operation, because an
 already-running CLI may still need its matching code-mode host. Do not launch
 another Codex process during cleanup.

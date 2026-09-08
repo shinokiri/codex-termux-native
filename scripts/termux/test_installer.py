@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import unittest
 
+from scripts.install.test_install_sh import create_legacy_release
 from scripts.install.test_install_sh import run_installer_in
 from scripts.install.test_install_sh import write_executable
 
@@ -92,8 +93,73 @@ class TermuxInstallerTest(unittest.TestCase):
                 for name in ("sessions/keep.jsonl", "auth.json", "config.toml"):
                     self.assertEqual((codex_home / name).read_text(), name)
 
+    def test_prune_removes_the_legacy_installer_layout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive, metadata = create_legacy_release(root)
+            result, _ = run_installer_in(
+                root,
+                "latest",
+                force_macos=True,
+                metadata_json=metadata,
+                legacy_archive_path=archive,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            current = root / "codex-home/packages/standalone/current"
+            legacy = current.resolve()
+            self.assertTrue((legacy / "codex-resources/rg").is_file())
+            self.assertFalse((legacy / "codex-package.json").exists())
+            result, _ = run_installer_in(
+                root, "latest", platform="android", **release_fixture(root, 1)
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            selected = current.resolve()
+            (root / "requests.log").unlink()
+
+            result, requests = run_installer_in(
+                root, "latest", platform="android", installer_args=("--prune",)
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(requests, [])
+            self.assertFalse(legacy.exists())
+            self.assertEqual(current.resolve(), selected)
+            self.assertTrue((current / "bin/codex-code-mode-host").is_file())
+
+    def test_prune_cleans_staging_after_install_finalization_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result, _ = run_installer_in(
+                root, "latest", platform="android", **release_fixture(root, 1)
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            current = root / "codex-home/packages/standalone/current"
+            selected = current.resolve()
+            write_executable(
+                root / "bin/mv",
+                '#!/bin/sh\ncase "$1" in */releases/.staging.*) exit 23;; esac\n'
+                'exec /bin/mv "$@"\n',
+            )
+            result, _ = run_installer_in(
+                root, "latest", platform="android", **release_fixture(root, 2)
+            )
+            self.assertEqual(result.returncode, 23, result.stderr)
+            staging = list(selected.parent.glob(".staging.*"))
+            self.assertEqual(len(staging), 1)
+            self.assertTrue((staging[0] / "bin/codex-code-mode-host").is_file())
+            (root / "bin/mv").unlink()
+            (root / "requests.log").unlink()
+
+            result, requests = run_installer_in(
+                root, "latest", platform="android", installer_args=("--prune",)
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(requests, [])
+            self.assertEqual(list(selected.parent.iterdir()), [selected])
+            self.assertEqual(current.resolve(), selected)
+            self.assertTrue((current / "bin/codex-code-mode-host").is_file())
+
     def test_prune_preserves_packages_when_current_is_invalid(self):
-        for invalid in ("missing", "outside", "incomplete"):
+        for invalid in ("missing", "outside", "incomplete", "staging"):
             with (
                 self.subTest(current=invalid),
                 tempfile.TemporaryDirectory() as temporary,
@@ -107,6 +173,12 @@ class TermuxInstallerTest(unittest.TestCase):
                 installed = current.resolve()
                 if invalid == "incomplete":
                     (installed / "bin/codex-code-mode-host").unlink()
+                elif invalid == "staging":
+                    staged = installed.with_name(".staging.manual")
+                    installed.rename(staged)
+                    installed = staged
+                    current.unlink()
+                    current.symlink_to(installed, target_is_directory=True)
                 else:
                     current.unlink()
                     if invalid == "outside":
