@@ -74,7 +74,6 @@ mod git_enrichment;
 mod guardian_authorization;
 mod guardian_history;
 mod guardian_mcp_elicitation;
-mod guardian_retained_context;
 #[cfg(not(target_os = "windows"))]
 mod guardian_review;
 #[cfg(not(target_os = "windows"))]
@@ -128,7 +127,6 @@ mod quota_exceeded;
 mod realtime_conversation;
 mod realtime_initial_items;
 mod realtime_sideband_endpoint;
-mod reasoning_effort_override;
 mod remote_env;
 mod remote_models;
 mod request_compression;

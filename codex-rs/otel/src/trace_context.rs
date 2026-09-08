@@ -137,8 +137,7 @@ pub(crate) fn context_from_trace_headers(
         headers.insert("tracestate".to_string(), tracestate.to_string());
     }
 
-    // Invalid incoming headers must not fall back to an unrelated active span.
-    let context = TraceContextPropagator::new().extract_with_context(&Context::new(), &headers);
+    let context = TraceContextPropagator::new().extract(&headers);
     if !context.span().span_context().is_valid() {
         return None;
     }
@@ -370,12 +369,6 @@ mod tests {
 
     #[test]
     fn invalid_traceparent_returns_none() {
-        let parent = context_from_trace_headers(
-            Some("00-11111111111111111111111111111111-2222222222222222-01"),
-            /*tracestate*/ None,
-        )
-        .expect("valid ambient context");
-        let _guard = parent.attach();
         assert!(
             context_from_trace_headers(Some("not-a-traceparent"), /*tracestate*/ None).is_none()
         );

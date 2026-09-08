@@ -14,14 +14,20 @@ use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::ThreadResumeResponse;
+use codex_features::Feature;
 use codex_protocol::ThreadId;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::Result;
 
 impl AppServerSession {
-    pub(crate) fn with_local_codex_home(mut self, codex_home: &AbsolutePathBuf) -> Self {
+    /// Captures the server's startup migration policy before workspace config can change.
+    ///
+    /// Sessions without a recorded startup config conservatively assume migration is enabled.
+    pub(crate) fn with_startup_config(mut self, config: &Config) -> Self {
+        self.background_rollout_migration_enabled = config
+            .features
+            .enabled(Feature::BackgroundPaginatedRolloutMigration);
         self.task_tool_capabilities_dir = (!self.uses_embedded_app_server())
-            .then(|| codex_home.join("tui-thread-reference-capabilities"));
+            .then(|| config.codex_home.join("tui-thread-reference-capabilities"));
         self
     }
 
@@ -44,7 +50,6 @@ impl AppServerSession {
 
     pub(crate) async fn resume_thread(
         &mut self,
-        local_settings: &crate::local_settings::LocalSettings,
         config: Config,
         thread_id: ThreadId,
         model_settings: ResumeModelSettings,
@@ -73,20 +78,23 @@ impl AppServerSession {
                 .get(&thread_id)
                 .is_some_and(|state| state.history_mode == ThreadHistoryMode::Legacy)
                 && (!self.uses_embedded_app_server()
-                    || ({
-                        // The guard prevents migration through the full resume,
-                        // regardless of the server's migration feature settings.
-                        rollout_maintenance_guard =
-                            codex_rollout::try_acquire_rollout_maintenance_lock(
-                                config.codex_home.as_path(),
-                            )
-                            .ok()
-                            .flatten();
-                        rollout_maintenance_guard.is_some()
-                    } && self
-                        .thread_read(thread_id, /*include_turns*/ false)
-                        .await
-                        .is_ok_and(|thread| thread.history_mode == ThreadHistoryMode::Legacy)));
+                    || (!self.background_rollout_migration_enabled
+                        && !config
+                            .features
+                            .enabled(Feature::BackgroundPaginatedRolloutMigration)
+                        && {
+                            rollout_maintenance_guard =
+                                codex_rollout::try_acquire_rollout_maintenance_lock(
+                                    config.codex_home.as_path(),
+                                )
+                                .ok()
+                                .flatten();
+                            rollout_maintenance_guard.is_some()
+                        }
+                        && self
+                            .thread_read(thread_id, /*include_turns*/ false)
+                            .await
+                            .is_ok_and(|thread| thread.history_mode == ThreadHistoryMode::Legacy)));
             !known_legacy_history
         } else {
             false
@@ -130,20 +138,15 @@ impl AppServerSession {
             response.turns_backwards_cursor.clone(),
             response.items_backwards_cursor.clone(),
             Some(&config),
-            Some(local_settings),
             HistoryHydrationScope::Initial,
         )
         .await?;
         let fork_parent_title = self
             .fork_parent_title_from_app_server(response.thread.forked_from_id.as_deref())
             .await;
-        let mut started = started_thread_from_resume_response(
-            response,
-            local_settings,
-            &config,
-            self.thread_params_mode(),
-        )
-        .await?;
+        let mut started =
+            started_thread_from_resume_response(response, &config, self.thread_params_mode())
+                .await?;
         started.session.fork_parent_title = fork_parent_title;
         if self.task_tools_available(thread_id) {
             self.remember_task_tool_thread(thread_id);

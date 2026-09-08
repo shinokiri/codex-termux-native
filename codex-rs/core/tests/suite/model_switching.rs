@@ -6,6 +6,7 @@ use codex_core::TurnInputRequest;
 use codex_core::config::Constrained;
 use codex_features::Feature;
 use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_login::CodexAuth;
 use codex_models_manager::bundled_models_response;
 use codex_models_manager::manager::RefreshStrategy;
@@ -120,9 +121,7 @@ fn test_model_info(
         input_modalities,
         used_fallback_model_metadata: false,
         supports_search_tool: false,
-        supports_experimental_context: false,
         use_responses_lite: false,
-        guardian: None,
         node_repl_auto_review_required: false,
         node_repl_disabled: false,
         auto_review_model_override: None,
@@ -443,7 +442,7 @@ async fn model_change_appends_model_instructions_developer_message() -> Result<(
     let rollout_path = test.codex.rollout_path().expect("rollout path");
     let model_states = std::fs::read_to_string(rollout_path)?
         .lines()
-        .map(codex_rollout::parse_rollout_line)
+        .map(serde_json::from_str::<RolloutLine>)
         .collect::<serde_json::Result<Vec<_>>>()?
         .into_iter()
         .filter_map(|line| match line.item {
@@ -1359,9 +1358,7 @@ async fn model_switch_to_smaller_model_updates_token_context_window() -> Result<
         input_modalities: default_input_modalities(),
         used_fallback_model_metadata: false,
         supports_search_tool: false,
-        supports_experimental_context: false,
         use_responses_lite: false,
-        guardian: None,
         node_repl_auto_review_required: false,
         node_repl_disabled: false,
         auto_review_model_override: None,

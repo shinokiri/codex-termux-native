@@ -48,8 +48,6 @@ pub(crate) fn builder_from_session_meta(
         session_meta.meta.source.clone(),
     );
     builder.history_mode = session_meta.meta.history_mode;
-    builder.originator =
-        (!session_meta.meta.originator.is_empty()).then(|| session_meta.meta.originator.clone());
     builder.model_provider = session_meta.meta.model_provider.clone();
     builder.agent_nickname = session_meta.meta.agent_nickname.clone();
     builder.agent_role = session_meta.meta.agent_role.clone();
@@ -80,7 +78,6 @@ pub fn builder_from_items(
         | RolloutItem::WorldState(_)
         | RolloutItem::RealtimeItem(_)
         | RolloutItem::TokenUsageRecord(_)
-        | RolloutItem::RetainedContext(_)
         | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::EventMsg(_) => None,
     }) && let Some(builder) = builder_from_session_meta(session_meta, rollout_path)
@@ -172,7 +169,6 @@ pub async fn extract_metadata_from_rollout(
             | RolloutItem::WorldState(_)
             | RolloutItem::RealtimeItem(_)
             | RolloutItem::TokenUsageRecord(_)
-            | RolloutItem::RetainedContext(_)
             | RolloutItem::SecurityRiskScore(_)
             | RolloutItem::EventMsg(_) => None,
         }),

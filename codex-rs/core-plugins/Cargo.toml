@@ -57,6 +57,9 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 zip = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+which = { workspace = true }
+
 [dev-dependencies]
 codex-exec-server-test-support = { workspace = true }
 libc = { workspace = true }
