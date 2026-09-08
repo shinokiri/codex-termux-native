@@ -21,7 +21,6 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::client_tool_catalog::ClientToolCatalog;
 use crate::codex_apps::normalize_codex_apps_callable_name;
 use crate::codex_apps::normalize_codex_apps_callable_namespace;
 use crate::codex_apps::normalize_codex_apps_tool_title;
@@ -114,7 +113,7 @@ const UNTRUSTED_CONNECTOR_META_KEYS: &[&str] = &[
 pub(crate) struct ManagedClient {
     pub(crate) client: Arc<RmcpClient>,
     pub(crate) server_info: McpServerInfo,
-    pub(crate) tool_catalog: Arc<ClientToolCatalog>,
+    pub(crate) tools: Vec<ToolInfo>,
     pub(crate) tool_timeout: Option<Duration>,
     pub(crate) server_instructions: Option<String>,
     pub(crate) server_supports_sandbox_state_meta_capability: bool,
@@ -122,28 +121,30 @@ pub(crate) struct ManagedClient {
 }
 
 impl ManagedClient {
-    pub(crate) async fn listed_tools(&self) -> Vec<ToolInfo> {
+    pub(crate) fn listed_tools(&self) -> Vec<ToolInfo> {
         let total_start = Instant::now();
-        self.tool_catalog
-            .read(|catalog| {
-                // Discovery may use the shared cache until this client is refreshed.
-                // Executable bindings always capture this client's own catalog.
-                if catalog.revision == 0
-                    && let Some(cache_context) = &self.codex_apps_tools_cache_context
-                {
-                    let tools = cache_context.current_tools();
-                    emit_duration(
-                        MCP_TOOLS_LIST_DURATION_METRIC,
-                        total_start.elapsed(),
-                        &[("cache", if tools.is_some() { "hit" } else { "miss" })],
-                    );
-                    if let Some(tools) = tools {
-                        return tools;
-                    }
-                }
-                catalog.tools.clone()
-            })
-            .await
+        if let Some(tools) = self
+            .codex_apps_tools_cache_context
+            .as_ref()
+            .and_then(ConnectorRuntimeContext::current_tools)
+        {
+            emit_duration(
+                MCP_TOOLS_LIST_DURATION_METRIC,
+                total_start.elapsed(),
+                &[("cache", "hit")],
+            );
+            return tools;
+        }
+
+        if self.codex_apps_tools_cache_context.is_some() {
+            emit_duration(
+                MCP_TOOLS_LIST_DURATION_METRIC,
+                total_start.elapsed(),
+                &[("cache", "miss")],
+            );
+        }
+
+        self.tools.clone()
     }
 }
 
@@ -361,7 +362,7 @@ impl ManagedClientStartup {
                     }
                 };
                 start_server_task(
-                    server_name.clone(),
+                    server_name,
                     client,
                     StartServerTaskParams {
                         is_codex_apps_mcp_server,
@@ -384,10 +385,6 @@ impl ManagedClientStartup {
                 Ok(result) => result,
                 Err(CancelErr::Cancelled) => Err(StartupOutcomeError::Cancelled),
             };
-            // Log once per startup attempt, including discovery without startup notifications.
-            if let Err(StartupOutcomeError::Failed { error, .. }) = &outcome {
-                warn!(server_name, %error, "MCP server startup failed");
-            }
             if outcome.is_ok()
                 && let Some(refresh_start) = refresh_start
             {
@@ -576,17 +573,17 @@ impl AsyncManagedClient {
             })
     }
 
-    pub(crate) async fn listed_tools(&self) -> Result<Vec<ToolInfo>, StartupOutcomeError> {
+    pub(crate) async fn listed_tools(&self) -> Option<Vec<ToolInfo>> {
         // Plugin provenance is resolved per-session rather than stored in shared cache payloads.
         if !self.startup_complete.load(Ordering::Acquire)
             && let Some(startup_tools) = self.cached_tools()
         {
-            Ok(startup_tools)
+            Some(startup_tools)
         } else {
             match self.client().await {
-                Ok(client) => Ok(client.listed_tools().await),
-                Err(error) if self.is_codex_apps_mcp_server => self.cached_tools().ok_or(error),
-                Err(error) => Err(error),
+                Ok(client) => Some(client.listed_tools()),
+                Err(_) if self.is_codex_apps_mcp_server => self.cached_tools(),
+                Err(_) => None,
             }
         }
     }
@@ -621,7 +618,7 @@ impl From<anyhow::Error> for StartupOutcomeError {
     fn from(error: anyhow::Error) -> Self {
         let is_authentication_required = is_authentication_required_error(&error);
         Self::Failed {
-            error: format!("{error:#}"),
+            error: error.to_string(),
             is_authentication_required,
         }
     }
@@ -975,7 +972,7 @@ async fn start_server_task(
     let managed = ManagedClient {
         client: Arc::clone(&client),
         server_info,
-        tool_catalog: Arc::new(ClientToolCatalog::new(client_tools)),
+        tools: client_tools,
         tool_timeout: None,
         server_instructions: initialize_result.instructions,
         server_supports_sandbox_state_meta_capability,
@@ -1087,6 +1084,11 @@ pub(crate) async fn make_rmcp_client(
     runtime_auth_provider: Option<SharedAuthProvider>,
     protocol_mode: McpProtocolMode,
 ) -> Result<RmcpClient, StartupOutcomeError> {
+    if oauth_refresh_mode == McpOAuthRefreshMode::Coordinated {
+        warn!(
+            "MCP OAuth refresh coordination is not available in this build; using legacy refresh"
+        );
+    }
     let config = server.config().clone();
     if matches!(config.auth, McpServerAuth::ChatGpt)
         && !config.is_local_environment()
@@ -1209,7 +1211,6 @@ pub(crate) async fn make_rmcp_client(
                 runtime_auth_provider,
                 protocol_mode,
                 redirect_mode,
-                oauth_refresh_mode,
             )
             .await
             .map_err(StartupOutcomeError::from)

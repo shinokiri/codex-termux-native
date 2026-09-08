@@ -7,7 +7,6 @@ use codex_app_server_protocol::ThreadHistoryMode;
 use codex_features::Feature;
 use codex_protocol::ThreadId;
 use color_eyre::eyre::Result;
-use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
@@ -45,12 +44,7 @@ async fn legacy_resume_preserves_history_mode_after_picker_server_replacement() 
     app_server.remember_thread_history_mode(thread_id, history_mode);
     let next_request_id = app_server.next_request_id;
     let resumed = app_server
-        .resume_thread(
-            &crate::local_settings::LocalSettings::from(&config),
-            config,
-            thread_id,
-            ResumeModelSettings::RestoreFromThread,
-        )
+        .resume_thread(config, thread_id, ResumeModelSettings::RestoreFromThread)
         .await?;
 
     assert_eq!(app_server.next_request_id, next_request_id + 2);
@@ -60,64 +54,78 @@ async fn legacy_resume_preserves_history_mode_after_picker_server_replacement() 
 }
 
 #[tokio::test]
-async fn cached_legacy_resume_revalidates_history_across_migration_settings() -> Result<()> {
-    for (startup_enabled, workspace_enabled) in
-        [(false, false), (false, true), (true, false), (true, true)]
+async fn background_migration_disables_cached_legacy_resume_shortcut() -> Result<()> {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let config = build_config(&codex_home).await;
+    let legacy_thread_id = ThreadId::from_string(
+        &create_fake_rollout(
+            codex_home.path(),
+            "2025-01-05T12-00-00",
+            "2025-01-05T12:00:00Z",
+            "Saved legacy user message",
+            Some(config.model_provider_id.as_str()),
+            /*git_info*/ None,
+        )
+        .expect("create legacy rollout"),
+    )?;
+    let thread_id = ThreadId::from_string(
+        &create_fake_paginated_rollout(
+            codex_home.path(),
+            "2025-01-05T12-00-01",
+            "2025-01-05T12:00:01Z",
+            "Saved paginated user message",
+            Some(config.model_provider_id.as_str()),
+            /*git_info*/ None,
+        )
+        .expect("create paginated rollout"),
+    )?;
+    let mut migration_config = config.clone();
+    migration_config
+        .features
+        .enable(Feature::BackgroundPaginatedRolloutMigration)?;
+
+    for (startup_config, resume_config) in
+        [(&config, &migration_config), (&migration_config, &config)]
     {
-        let codex_home = tempfile::tempdir().expect("tempdir");
-        let config = build_config(&codex_home).await;
-        let legacy_thread_id = ThreadId::from_string(
-            &create_fake_rollout(
-                codex_home.path(),
-                "2025-01-05T12-00-00",
-                "2025-01-05T12:00:00Z",
-                "Saved legacy user message",
-                Some(config.model_provider_id.as_str()),
-                /*git_info*/ None,
-            )
-            .expect("create legacy rollout"),
-        )?;
-        let mut startup_config = config.clone();
-        if startup_enabled {
-            startup_config
-                .features
-                .enable(Feature::BackgroundPaginatedRolloutMigration)?;
-        }
-        let mut resume_config = config;
-        if workspace_enabled {
-            resume_config
-                .features
-                .enable(Feature::BackgroundPaginatedRolloutMigration)?;
-        }
-        // Keep the real startup worker from migrating the legacy fixture before selection.
-        let maintenance_guard =
-            codex_rollout::try_acquire_rollout_maintenance_lock(codex_home.path())?
-                .expect("acquire rollout maintenance lock");
-        let mut app_server = crate::start_embedded_app_server_for_picker(&startup_config).await?;
+        // Keep the real worker disabled while exercising both startup/request mismatches.
+        let mut app_server = crate::start_embedded_app_server_for_picker(&config)
+            .await?
+            .with_startup_config(startup_config);
         app_server.remember_thread_history_mode(legacy_thread_id, ThreadHistoryMode::Legacy);
-        let local_settings = crate::local_settings::LocalSettings::from(&resume_config);
         let next_request_id = app_server.next_request_id;
-        let legacy = {
-            let resume = app_server.resume_thread(
-                &local_settings,
+        let legacy = app_server
+            .resume_thread(
                 resume_config.clone(),
                 legacy_thread_id,
                 ResumeModelSettings::RestoreFromThread,
-            );
-            tokio::pin!(resume);
-            drop(maintenance_guard);
-            // This current-thread test polls resume before yielding to the startup worker.
-            // Resume must acquire its guard before waiting for metadata revalidation.
-            assert!(resume.as_mut().now_or_never().is_none());
-            assert!(
-                codex_rollout::try_acquire_rollout_maintenance_lock(codex_home.path())?.is_none()
-            );
-            resume.await?
-        };
+            )
+            .await?;
         assert_eq!(app_server.next_request_id, next_request_id + 2);
         assert!(!legacy.turns.is_empty());
+
+        app_server.remember_thread_history_mode(thread_id, ThreadHistoryMode::Legacy);
+        let next_request_id = app_server.next_request_id;
+
+        let resumed = app_server
+            .resume_thread(
+                resume_config.clone(),
+                thread_id,
+                ResumeModelSettings::RestoreFromThread,
+            )
+            .await?;
+
+        assert!(app_server.next_request_id > next_request_id + 1);
+        assert_eq!(resumed.session.thread_id, thread_id);
+        assert_eq!(
+            app_server
+                .history_pagination
+                .get(&thread_id)
+                .map(|state| state.history_mode),
+            Some(ThreadHistoryMode::Paginated)
+        );
         app_server.shutdown().await?;
     }
+
     Ok(())
 }
 
@@ -144,12 +152,7 @@ async fn rollout_maintenance_contention_disables_cached_legacy_resume_shortcut()
     let next_request_id = app_server.next_request_id;
 
     let resumed = app_server
-        .resume_thread(
-            &crate::local_settings::LocalSettings::from(&config),
-            config,
-            thread_id,
-            ResumeModelSettings::RestoreFromThread,
-        )
+        .resume_thread(config, thread_id, ResumeModelSettings::RestoreFromThread)
         .await?;
 
     assert_eq!(app_server.next_request_id, next_request_id + 3);
@@ -187,7 +190,6 @@ async fn stale_legacy_history_mode_is_revalidated_before_resume() -> Result<()> 
 
     let resumed = app_server
         .resume_thread(
-            &crate::local_settings::LocalSettings::from(&config),
             config.clone(),
             thread_id,
             ResumeModelSettings::RestoreFromThread,
@@ -209,7 +211,6 @@ async fn stale_legacy_history_mode_is_revalidated_before_resume() -> Result<()> 
     assert!(
         app_server
             .resume_thread(
-                &crate::local_settings::LocalSettings::from(&config),
                 config,
                 missing_thread_id,
                 ResumeModelSettings::RestoreFromThread

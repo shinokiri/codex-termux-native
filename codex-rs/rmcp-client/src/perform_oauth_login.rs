@@ -721,8 +721,7 @@ impl OauthLoginFlow {
                 &stored,
                 self.store_mode,
                 self.keyring_backend_kind,
-            )
-            .await?;
+            )?;
 
             Ok(())
         }

@@ -343,7 +343,7 @@ impl ChatWidget {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
             header: Box::new(DelayedLoadingHeader::new(
                 self.frame_requester.clone(),
-                self.local_settings.tui.animations,
+                self.config.animations,
                 "Loading available plugins...".to_string(),
                 Some("This updates when the marketplace list is ready.".to_string()),
             )),
@@ -362,7 +362,7 @@ impl ChatWidget {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
             header: Box::new(DelayedLoadingHeader::new(
                 self.frame_requester.clone(),
-                self.local_settings.tui.animations,
+                self.config.animations,
                 "Adding marketplace...".to_string(),
                 /*note*/ None,
             )),
@@ -486,7 +486,7 @@ impl ChatWidget {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
             header: Box::new(DelayedLoadingHeader::new(
                 self.frame_requester.clone(),
-                self.local_settings.tui.animations,
+                self.config.animations,
                 loading_text.clone(),
                 /*note*/ None,
             )),
@@ -508,7 +508,7 @@ impl ChatWidget {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
             header: Box::new(DelayedLoadingHeader::new(
                 self.frame_requester.clone(),
-                self.local_settings.tui.animations,
+                self.config.animations,
                 format!("Loading details for {plugin_display_name}..."),
                 /*note*/ None,
             )),

@@ -482,8 +482,8 @@ impl App {
     /// Persist prompt text in the local cross-session message history.
     pub(super) fn append_message_history_entry(&self, thread_id: ThreadId, text: String) {
         let history_config = codex_message_history::HistoryConfig::new(
-            self.local_settings.codex_home.clone(),
-            &self.local_settings.history,
+            self.chat_widget.config_ref().codex_home.clone(),
+            &self.chat_widget.config_ref().history,
         );
         tokio::spawn(async move {
             if let Err(err) =
@@ -506,8 +506,8 @@ impl App {
         log_id: u64,
     ) -> Result<()> {
         let history_config = codex_message_history::HistoryConfig::new(
-            self.local_settings.codex_home.clone(),
-            &self.local_settings.history,
+            self.chat_widget.config_ref().codex_home.clone(),
+            &self.chat_widget.config_ref().history,
         );
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
@@ -540,8 +540,8 @@ impl App {
         log_id: u64,
     ) -> Result<()> {
         let history_config = codex_message_history::HistoryConfig::new(
-            self.local_settings.codex_home.clone(),
-            &self.local_settings.history,
+            self.chat_widget.config_ref().codex_home.clone(),
+            &self.chat_widget.config_ref().history,
         );
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
@@ -659,7 +659,6 @@ impl App {
                 Ok(true)
             }
             AppCommand::UserTurn {
-                client_user_message_id,
                 items,
                 cwd,
                 approval_policy,
@@ -679,12 +678,7 @@ impl App {
                     let mut retried_after_turn_mismatch = false;
                     loop {
                         match app_server
-                            .turn_steer(
-                                thread_id,
-                                steer_turn_id.clone(),
-                                client_user_message_id.clone(),
-                                items.to_vec(),
-                            )
+                            .turn_steer(thread_id, steer_turn_id.clone(), items.to_vec())
                             .await
                         {
                             Ok(_) => return Ok(true),
@@ -721,7 +715,7 @@ impl App {
                                             self.thread_event_channels.get(&thread_id)
                                         {
                                             let mut store = channel.store.lock().await;
-                                            store.set_active_turn_id(actual_turn_id.clone());
+                                            store.active_turn_id = Some(actual_turn_id.clone());
                                         }
                                         steer_turn_id = actual_turn_id;
                                         retried_after_turn_mismatch = true;
@@ -733,7 +727,7 @@ impl App {
                                             self.thread_event_channels.get(&thread_id)
                                         {
                                             let mut store = channel.store.lock().await;
-                                            store.set_active_turn_id(actual_turn_id);
+                                            store.active_turn_id = Some(actual_turn_id);
                                         }
                                         return Err(error.into());
                                     }
@@ -757,7 +751,6 @@ impl App {
                     let response = app_server
                         .turn_start(
                             thread_id,
-                            client_user_message_id.clone(),
                             items.to_vec(),
                             cwd.clone(),
                             *approval_policy,
@@ -810,7 +803,7 @@ impl App {
                     .wrap_err("review/start returned invalid review thread id")?;
                 let store = Arc::clone(&self.ensure_thread_channel(review_thread_id).store);
                 let mut store = store.lock().await;
-                store.set_active_turn_id(response.turn.id);
+                store.active_turn_id = Some(response.turn.id);
                 Ok(true)
             }
             AppCommand::CleanBackgroundTerminals => {
@@ -1424,7 +1417,6 @@ impl App {
 
         match app_server
             .resume_thread(
-                &self.local_settings,
                 self.config.clone(),
                 thread_id,
                 crate::app_server_session::ResumeModelSettings::PreserveExistingThread,
@@ -1477,7 +1469,7 @@ impl App {
         snapshot.turns = turns;
         snapshot
             .events
-            .retain_mut(ThreadEventStore::event_survives_session_refresh);
+            .retain(ThreadEventStore::event_survives_session_refresh);
     }
 
     /// Opens the `/subagents` picker after refreshing cached labels for known threads.
@@ -1562,7 +1554,6 @@ impl App {
         mut snapshot: ThreadEventSnapshot,
         resume_restored_queue: bool,
     ) {
-        replay_filter::omit_completed_agent_deltas(&mut snapshot.events);
         let request_changes = snapshot
             .events
             .iter()
@@ -1686,19 +1677,7 @@ impl App {
         let cwd = self.chat_widget.config_ref().cwd.clone();
         let errors = errors_for_cwd(&cwd, &response);
         let errors = self.skill_load_warnings.newly_active_errors(&errors);
-        let warnings = skill_load_warning_messages(&errors);
-        if self.skill_load_warnings.startup_complete {
-            for warning in warnings {
-                self.chat_widget.add_warning_message(warning);
-            }
-        } else {
-            self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-                // The per-file diagnostics already identify every affected skill.
-                history_cell::StartupWarningsCell::new(
-                    warnings.into_iter().skip(/*n*/ 1).collect(),
-                ),
-            )));
-        }
+        emit_skill_load_warnings(&self.app_event_tx, &errors);
         self.chat_widget.handle_skills_list_response(response);
     }
 
@@ -1883,16 +1862,37 @@ impl App {
         let had_active_view = self.chat_widget.has_active_view();
         self.handle_thread_event_now_recovering_file_changes(event)
             .await;
-        if let Some(user_message) = automatic_title_user_message
-            && !user_message.trim().is_empty()
-            && let Some(thread_id) = self.active_thread_id
-        {
-            self.generate_thread_title(
-                app_server,
-                thread_id,
-                ThreadTitleDestination::Automatic,
-                super::thread_title::thread_title_prompt(&user_message),
-            );
+        if let Some(user_message) = automatic_title_user_message {
+            let expected_title = user_message
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .take(super::thread_title::THREAD_TITLE_MAX_CHARS)
+                .collect::<String>();
+
+            if !expected_title.is_empty()
+                && let Some(thread_id) = self.active_thread_id
+            {
+                match app_server
+                    .thread_set_name(thread_id, expected_title.clone())
+                    .await
+                {
+                    Ok(()) => {
+                        self.chat_widget
+                            .expect_automatic_thread_name(expected_title.clone());
+                        self.generate_thread_title(
+                            app_server,
+                            thread_id,
+                            ThreadTitleDestination::Automatic { expected_title },
+                            super::thread_title::thread_title_prompt(&user_message),
+                        );
+                    }
+                    Err(error) => {
+                        tracing::debug!(%error, "failed to set provisional thread title");
+                    }
+                }
+            }
         }
         if !had_active_view
             && self.chat_widget.has_active_view()

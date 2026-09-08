@@ -329,9 +329,6 @@ async fn guardian_prewarm_and_review_skip_redundant_git_enrichment() -> Result<(
 
 #[test_case("system"; "system background thread")]
 #[test_case("ambient_background"; "ambient background thread")]
-#[test_case("ambient_suggestions"; "ambient suggestions")]
-#[test_case("ambient_suggestion_safety"; "ambient suggestion safety")]
-#[test_case("title"; "title background thread")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ephemeral_system_thread_prewarm_skips_and_turn_observes_fresh_state(
     thread_source: &str,
@@ -391,7 +388,7 @@ async fn ephemeral_system_thread_prewarm_skips_and_turn_observes_fresh_state(
     assert!(turn_metadata(&prewarm)?.get("workspaces").is_none());
 
     std::fs::write(repo.path().join("untracked.txt"), "dirty\n")?;
-    let submission = system_thread
+    system_thread
         .thread
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
             text: "generate a thread title".into(),
@@ -408,10 +405,7 @@ async fn ephemeral_system_thread_prewarm_skips_and_turn_observes_fresh_state(
         .and_then(|connection| connection.get(2))
         .context("system turn follow-up request")?
         .body_json();
-    let codex_core::TurnInputSubmission::Started { turn_id } = submission else {
-        panic!("background input should start a turn");
-    };
-    assert_root_turn(&turn, Some(&turn_id))?;
+    assert_root_turn(&turn, /*expected*/ None)?;
     assert_eq!(
         turn_metadata(&turn)?["workspaces"],
         expected_workspace(repo.path(), &head, /*has_changes*/ true)
