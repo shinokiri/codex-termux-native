@@ -60,7 +60,15 @@ pub(crate) async fn handle_retryable_response_stream_error(
         .features
         .enabled(Feature::UnboundedConnectionRetries)
         && matches!(request, ResponsesStreamRequest::Sampling)
-        && matches!(err.details(), CodexErrorDetails::ConnectionFailed(_))
+        && (matches!(err.details(), CodexErrorDetails::ConnectionFailed(_))
+            // Preserve fast retries, then keep waiting on the preferred transport when a
+            // WebSocket stream disconnects or its connection attempt times out.
+            || (retry_state.retries >= max_retries
+                && sess.services.model_client.responses_websocket_enabled()
+                && matches!(
+                    err.details(),
+                    CodexErrorDetails::Stream(_) | CodexErrorDetails::RequestTimeout
+                )))
         && !turn_context.session_source.is_internal()
         && !turn_context.provider.info().is_amazon_bedrock()
     {

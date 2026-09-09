@@ -41,3 +41,47 @@ async fn sampling_retry_logs_stream_error_context() {
         "sampling_error=stream disconnected before completion: websocket closed by server before response.completed"
     ));
 }
+
+#[test_case::test_case(true, ResponsesStreamRequest::Sampling, CodexErr::Stream("closed".into()), true; "disconnect waits")]
+#[test_case::test_case(true, ResponsesStreamRequest::Sampling, CodexErr::RequestTimeout(), true; "connect timeout waits")]
+#[test_case::test_case(false, ResponsesStreamRequest::Sampling, CodexErr::Stream("closed".into()), false; "disabled feature falls back")]
+#[test_case::test_case(true, ResponsesStreamRequest::RemoteCompactionV2, CodexErr::Stream("closed".into()), false; "compaction stays bounded")]
+#[tokio::test]
+async fn websocket_waiting_respects_retry_policy(
+    unbounded: bool,
+    request: ResponsesStreamRequest,
+    error: CodexErr,
+    websocket_enabled: bool,
+) {
+    let (session, turn_context, _events) =
+        crate::session::tests::make_session_and_context_with_auth_and_config_and_rx(
+            codex_login::CodexAuth::from_api_key("test-key"),
+            Vec::new(),
+            |config| {
+                config.model_provider.supports_websockets = true;
+                if unbounded {
+                    config.features.enable(codex_features::Feature::UnboundedConnectionRetries);
+                } else {
+                    config.features.disable(codex_features::Feature::UnboundedConnectionRetries);
+                }
+            },
+        )
+        .await;
+    let mut client_session = session.services.model_client.new_session();
+    tokio::time::pause();
+    super::handle_retryable_response_stream_error(
+        &mut super::ResponsesStreamRetryState::default(),
+        /*max_retries*/ 0,
+        error,
+        &mut client_session,
+        &session,
+        &turn_context,
+        request,
+    )
+    .await
+    .expect("retry or fallback should succeed");
+    pretty_assertions::assert_eq!(
+        session.services.model_client.responses_websocket_enabled(),
+        websocket_enabled
+    );
+}
