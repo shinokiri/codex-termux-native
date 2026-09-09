@@ -43,7 +43,7 @@ async fn sampling_retry_logs_stream_error_context() {
 }
 
 #[test_case::test_case(true, ResponsesStreamRequest::Sampling, CodexErr::Stream("closed".into()), true; "disconnect waits")]
-#[test_case::test_case(true, ResponsesStreamRequest::Sampling, CodexErr::RequestTimeout(), true; "connect timeout waits")]
+#[test_case::test_case(true, ResponsesStreamRequest::Sampling, CodexErr::RequestTimeout, true; "connect timeout waits")]
 #[test_case::test_case(false, ResponsesStreamRequest::Sampling, CodexErr::Stream("closed".into()), false; "disabled feature falls back")]
 #[test_case::test_case(true, ResponsesStreamRequest::RemoteCompactionV2, CodexErr::Stream("closed".into()), false; "compaction stays bounded")]
 #[tokio::test]
@@ -60,9 +60,13 @@ async fn websocket_waiting_respects_retry_policy(
             |config| {
                 config.model_provider.supports_websockets = true;
                 if unbounded {
-                    config.features.enable(codex_features::Feature::UnboundedConnectionRetries);
+                    config
+                        .features
+                        .enable(codex_features::Feature::UnboundedConnectionRetries);
                 } else {
-                    config.features.disable(codex_features::Feature::UnboundedConnectionRetries);
+                    config
+                        .features
+                        .disable(codex_features::Feature::UnboundedConnectionRetries);
                 }
             },
         )

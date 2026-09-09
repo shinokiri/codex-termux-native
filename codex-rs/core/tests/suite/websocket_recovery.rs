@@ -32,7 +32,10 @@ async fn websocket_disconnects_keep_reconnecting_after_fast_retries() -> Result<
             vec![], // Disconnect after receiving the first sampling request.
         ],
         vec![vec![]], // Exhaust the one fast retry.
-        vec![vec![ev_response_created("recovered"), ev_completed("recovered")]],
+        vec![vec![
+            ev_response_created("recovered"),
+            ev_completed("recovered"),
+        ]],
     ])
     .await;
     let test = test_codex()
