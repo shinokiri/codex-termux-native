@@ -1,5 +1,7 @@
 {
-  "ref": "main",
-  "commit": "ac192cd7937b0d73edc6dffe009940ae53782dd4",
-  "latest_release_seen": "rust-v0.153.4"
+  "ref": "rust-v0.154.0",
+  "commit": "6b9826e3aa83b1a5947db50f4332cb9c65f1b340",
+  "latest_release_seen": "rust-v0.154.0",
+  "release_revision": 6,
+  "port_commit": "5f0ba6f4972d1c52a89ee4e6b88d0bab75d7ed67"
 }
