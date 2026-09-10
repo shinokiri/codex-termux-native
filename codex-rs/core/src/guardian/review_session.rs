@@ -1,3 +1,7 @@
+#[path = "review_session_context.rs"]
+mod context_policy;
+use context_policy::ReviewContextPolicy;
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
@@ -18,15 +22,12 @@ use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::items::TurnItem;
 use codex_protocol::mcp::is_node_repl_backed_server;
-use codex_protocol::models::BaseInstructionsProvenance;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ImageDetail;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::PermissionProfileSnapshot;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::InputModality;
-use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
@@ -49,9 +50,9 @@ use crate::codex_delegate::run_codex_thread_interactive;
 use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ManagedFeatures;
-use crate::config::NetworkProxySpec;
 use crate::config::Permissions;
 use crate::context::ContextualUserFragment;
+use crate::context::GuardianContextMode;
 use crate::context::GuardianFollowupReviewReminder;
 use crate::context::GuardianNodeReplPolicy;
 use crate::context_manager::ContextManager;
@@ -83,13 +84,13 @@ use super::GuardianReviewContext;
 use super::feedback::record_failed_review;
 #[cfg(test)]
 use super::prompt::BUNDLED_GUARDIAN_POLICY;
-use super::prompt::BUNDLED_GUARDIAN_POLICY_TEMPLATE;
 use super::prompt::GUARDIAN_TRANSCRIPT_START;
 use super::prompt::GuardianPromptMode;
 use super::prompt::GuardianTranscriptCursor;
 use super::prompt::build_guardian_prompt_items_with_parent_turn;
-use super::prompt::guardian_policy_prompt_with_config_and_template;
 use super::review::guardian_review_session_config;
+pub(crate) use super::reviewer_config::build_guardian_review_session_config;
+use super::reviewer_config::read_only_guardian_permission_profile;
 
 const GUARDIAN_INTERRUPT_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const GUARDIAN_MAX_IMAGE_ITEM_TOKENS: i64 = 10_000;
@@ -108,6 +109,8 @@ pub(crate) enum GuardianReviewSessionOutcome {
 pub(crate) struct GuardianReviewSessionParams {
     pub(crate) parent_session: Arc<Session>,
     pub(crate) parent_context: GuardianReviewContext,
+    // Checkpoint selection and thread-owned prompt evidence must use the same history.
+    pub(crate) parent_history: ContextManager,
     pub(crate) spawn_config: Config,
     pub(crate) node_repl_policy: GuardianNodeReplPolicy,
     pub(crate) request: GuardianApprovalRequest,
@@ -226,19 +229,17 @@ impl GuardianReviewSessionReuseKey {
         spawn_config: &Config,
         user_instructions: Option<Instructions>,
         parent_history_version: u64,
+        context_mode: GuardianContextMode,
     ) -> Self {
         Self {
             root_authorization_version: None,
-            parent_history_version: if spawn_config
-                .features
-                .enabled(Feature::GuardianReuseParentCompaction)
-                || spawn_config
-                    .features
-                    .enabled(Feature::GuardianThreadContext)
-            {
-                parent_history_version
-            } else {
-                0
+            parent_history_version: match ReviewContextPolicy::for_context(
+                context_mode,
+                &spawn_config.features,
+            ) {
+                ReviewContextPolicy::Legacy => 0,
+                ReviewContextPolicy::LegacyWithCheckpointReuse
+                | ReviewContextPolicy::ThreadOwned => parent_history_version,
             },
             node_repl_auto_review_required: false,
             node_repl_policy: String::new(),
@@ -283,64 +284,6 @@ impl GuardianReviewSessionReuseKey {
         self.node_repl_policy = policy.body();
         self
     }
-}
-
-fn encrypted_parent_compaction(
-    history: &ContextManager,
-    features: &ManagedFeatures,
-    reviewer_compaction_hash: Option<&str>,
-) -> anyhow::Result<Option<ResponseItem>> {
-    let strict = features.enabled(Feature::GuardianThreadContext);
-    if !strict && !features.enabled(Feature::GuardianReuseParentCompaction) {
-        return Ok(None);
-    }
-    let Some(envelope) = history.annotated_items().iter().rev().find(|envelope| {
-        matches!(
-            envelope.item,
-            ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. }
-        )
-    }) else {
-        return Ok(None);
-    };
-
-    let item = &envelope.item;
-    let valid = match item {
-        ResponseItem::Compaction {
-            id: Some(_),
-            encrypted_content,
-            ..
-        } if !encrypted_content.is_empty() => true,
-        ResponseItem::ContextCompaction {
-            id: Some(_),
-            encrypted_content: Some(encrypted_content),
-            ..
-        } if !encrypted_content.is_empty() => true,
-        _ => false,
-    };
-    if !valid && !strict {
-        return Ok(None);
-    }
-    anyhow::ensure!(
-        valid,
-        "parent compaction checkpoint is unusable for Guardian review"
-    );
-    if strict {
-        // A resumed parent may now use a different model. Compare the actual
-        // checkpoint producer with the selected reviewer, not the live parent model.
-        let producer_hash = envelope
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.compaction_model_hash.as_deref());
-        anyhow::ensure!(
-            producer_hash
-                .zip(reviewer_compaction_hash)
-                .is_some_and(|(producer, reviewer)| {
-                    !producer.is_empty() && producer == reviewer
-                }),
-            "parent compaction checkpoint is incompatible with the Guardian review model or its compatibility is unknown"
-        );
-    }
-    Ok(Some(item.clone()))
 }
 
 pub(crate) fn prompt_cache_key_override_for_review_session(
@@ -471,20 +414,15 @@ impl GuardianReviewSessionManager {
                 guardian_review_session_config(&parent_session, &parent_turn).await?;
             let spawn_config = session_config.spawn_config;
             let parent_history = parent_session.clone_history().await;
-            let root_authorization_version =
-                if parent_session.enabled(Feature::GuardianThreadContext) {
-                    parent_session
-                        .services
-                        .agent_control
-                        .root_user_authorization(parent_session.thread_id)
-                        .await
-                        .map(|snapshot| snapshot.authorization_version)
-                } else {
-                    None
-                };
-            let parent_compaction = encrypted_parent_compaction(
-                &parent_history,
+            let context_policy = ReviewContextPolicy::for_context(
+                parent_session.guardian_context_mode,
                 &spawn_config.features,
+            );
+            let root_authorization_version = context_policy
+                .root_authorization_version(&parent_session)
+                .await;
+            let parent_compaction = context_policy.parent_compaction(
+                &parent_history,
                 session_config.compaction_model_hash.as_deref(),
             )?;
             let parent_context = GuardianReviewContext::from(parent_turn);
@@ -492,13 +430,14 @@ impl GuardianReviewSessionManager {
                 &spawn_config,
                 parent_session.user_instructions().await,
                 parent_history.history_version(),
+                parent_session.guardian_context_mode,
             )
             .with_environments(parent_context.environments())
             .with_node_repl_policy_eligibility(
                 parent_context
                     .turn()
                     .model_info()
-                    .node_repl_auto_review_required,
+                    .computer_use_review_required(),
             )
             .with_node_repl_policy(&session_config.node_repl_policy);
             reuse_key.root_authorization_version = root_authorization_version;
@@ -572,26 +511,17 @@ impl GuardianReviewSessionManager {
         params: GuardianReviewSessionParams,
     ) -> (GuardianReviewSessionOutcome, GuardianReviewAnalyticsResult) {
         let deadline = params.deadline;
-        let parent_history = params.parent_session.clone_history().await;
-        let root_authorization_version = if params
-            .parent_session
-            .enabled(Feature::GuardianThreadContext)
-        {
-            params
-                .parent_session
-                .services
-                .agent_control
-                .root_user_authorization(params.parent_session.thread_id)
-                .await
-                .map(|snapshot| snapshot.authorization_version)
-        } else {
-            None
-        };
-        let parent_compaction = match encrypted_parent_compaction(
-            &parent_history,
+        let parent_history = &params.parent_history;
+        let context_policy = ReviewContextPolicy::for_context(
+            params.parent_session.guardian_context_mode,
             &params.spawn_config.features,
-            params.compaction_model_hash.as_deref(),
-        ) {
+        );
+        let root_authorization_version = context_policy
+            .root_authorization_version(&params.parent_session)
+            .await;
+        let parent_compaction = match context_policy
+            .parent_compaction(parent_history, params.compaction_model_hash.as_deref())
+        {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 return (
@@ -604,6 +534,7 @@ impl GuardianReviewSessionManager {
             &params.spawn_config,
             params.parent_session.user_instructions().await,
             parent_history.history_version(),
+            params.parent_session.guardian_context_mode,
         )
         .with_environments(params.parent_context.environments())
         .with_node_repl_policy_eligibility(
@@ -611,7 +542,7 @@ impl GuardianReviewSessionManager {
                 .parent_context
                 .turn()
                 .model_info()
-                .node_repl_auto_review_required,
+                .computer_use_review_required(),
         )
         .with_node_repl_policy(&params.node_repl_policy);
         next_reuse_key.root_authorization_version = root_authorization_version;
@@ -624,9 +555,7 @@ impl GuardianReviewSessionManager {
         .await
         {
             Ok(mut state) => {
-                if !params
-                    .parent_session
-                    .enabled(Feature::GuardianThreadContext)
+                if context_policy != ReviewContextPolicy::ThreadOwned
                     && parent_compaction.is_none()
                     && let Some(trunk) = state.trunk.as_ref()
                 {
@@ -750,6 +679,7 @@ impl GuardianReviewSessionManager {
             session.get_config().await.as_ref(),
             session.user_instructions().await,
             session.clone_history().await.history_version(),
+            session.guardian_context_mode,
         );
         self.state.lock().await.trunk = Some(Arc::new(GuardianReviewSession {
             reuse_key,
@@ -773,6 +703,7 @@ impl GuardianReviewSessionManager {
             session.get_config().await.as_ref(),
             session.user_instructions().await,
             session.clone_history().await.history_version(),
+            session.guardian_context_mode,
         );
         self.state
             .lock()
@@ -1127,8 +1058,16 @@ async fn run_review_on_session(
                 .sync_session_approved_hosts_to(&review_session.session.services.network_approval)
                 .await;
 
+            let history = if params.parent_session.guardian_context_mode
+                == GuardianContextMode::ThreadOwned
+            {
+                params.parent_history.conversation_history_snapshot()
+            } else {
+                params.parent_session.conversation_history_snapshot().await
+            };
             let mut prompt_items = build_guardian_prompt_items_with_parent_turn(
                 params.parent_session.as_ref(),
+                history.as_ref(),
                 Some(&params.parent_context),
                 params.reasons.clone(),
                 params.request.clone(),
@@ -1413,7 +1352,7 @@ async fn ensure_guardian_node_repl_policy(
         .parent_context
         .turn()
         .model_info()
-        .node_repl_auto_review_required
+        .computer_use_review_required()
         || !matches!(
             &params.request,
             GuardianApprovalRequest::McpToolCall { server, tool_name, .. }
@@ -1585,100 +1524,6 @@ fn event_matches_turn(event: &Event, expected_turn_id: &str) -> bool {
         }
         _ => true,
     }
-}
-
-fn read_only_guardian_permission_profile(
-    permission_profile: &PermissionProfile,
-) -> PermissionProfile {
-    permission_profile
-        .intersect_with_read_only()
-        .unwrap_or(PermissionProfile::External {
-            network: codex_protocol::permissions::NetworkSandboxPolicy::Restricted,
-        })
-}
-
-pub(crate) fn build_guardian_review_session_config(
-    parent_config: &Config,
-    live_network_config: Option<codex_network_proxy::NetworkProxyConfig>,
-    active_model: &str,
-    reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
-    model_messages: Option<&ModelMessages>,
-) -> anyhow::Result<Config> {
-    let mut guardian_config = parent_config.clone();
-    guardian_config.model = Some(active_model.to_string());
-    guardian_config.model_reasoning_effort = reasoning_effort;
-    guardian_config.model_provider.request_max_retries = Some(1);
-    guardian_config.model_provider.stream_max_retries = Some(1);
-    guardian_config.include_skill_instructions = false;
-    guardian_config.memories.use_memories = false;
-    guardian_config.memories.dedicated_tools = false;
-    let catalog_auto_review = model_messages.and_then(|messages| messages.auto_review.as_ref());
-    let tenant_policy_config = parent_config.resolve_guardian_policy(model_messages);
-    let policy_template = catalog_auto_review
-        .and_then(|messages| messages.policy_template.as_deref())
-        .unwrap_or(BUNDLED_GUARDIAN_POLICY_TEMPLATE);
-    guardian_config.base_instructions = Some(guardian_policy_prompt_with_config_and_template(
-        tenant_policy_config,
-        policy_template,
-    ));
-    guardian_config.base_instructions_provenance = Some(BaseInstructionsProvenance::Custom);
-    guardian_config.notify = None;
-    guardian_config.developer_instructions = None;
-    guardian_config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
-    let guardian_permission_profile =
-        read_only_guardian_permission_profile(parent_config.permissions.permission_profile());
-    guardian_config
-        .permissions
-        .set_permission_profile(guardian_permission_profile)
-        .map_err(|err| {
-            anyhow::anyhow!("guardian review session could not set permission profile: {err}")
-        })?;
-    guardian_config.include_apps_instructions = false;
-    guardian_config
-        .mcp_servers
-        .set(HashMap::new())
-        .map_err(|err| {
-            anyhow::anyhow!("guardian review session could not clear MCP servers: {err}")
-        })?;
-    if let Some(live_network_config) = live_network_config
-        && guardian_config.permissions.network.is_some()
-    {
-        let network_constraints = guardian_config
-            .config_layer_stack
-            .requirements()
-            .network
-            .as_ref()
-            .map(|network| network.value.clone());
-        guardian_config.permissions.network = Some(NetworkProxySpec::from_config_and_constraints(
-            live_network_config,
-            network_constraints,
-            guardian_config.permissions.permission_profile(),
-        )?);
-    }
-    for feature in [
-        Feature::Collab,
-        Feature::MultiAgentV2,
-        Feature::GuardianV2,
-        Feature::CodexHooks,
-        Feature::Apps,
-        Feature::Plugins,
-        Feature::WebSearchRequest,
-        Feature::WebSearchCached,
-    ] {
-        guardian_config.features.disable(feature).map_err(|err| {
-            anyhow::anyhow!(
-                "guardian review session could not disable `features.{}`: {err}",
-                feature.key()
-            )
-        })?;
-        if guardian_config.features.enabled(feature) {
-            warn!(
-                "guardian review session could not disable `features.{}`; continuing with the feature enabled",
-                feature.key()
-            );
-        }
-    }
-    Ok(guardian_config)
 }
 
 async fn run_before_review_deadline<T>(

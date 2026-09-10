@@ -2,6 +2,7 @@
 //   stdout is the final message (if any).
 // - In --json mode, stdout must be valid JSONL, one event per line.
 // For both modes, any other output must be written to stderr.
+#![recursion_limit = "256"]
 #![deny(clippy::print_stdout)]
 // Android code generation for app-server futures exceeds the default limit.
 #![cfg_attr(target_os = "android", recursion_limit = "256")]
