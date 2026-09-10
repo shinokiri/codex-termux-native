@@ -22,6 +22,7 @@ fn installer_download_must_finish_before_execution() {
              cat <<'INSTALLER'\n\
              test \"$CODEX_NON_INTERACTIVE\" = 1 || exit 42\n\
              printf 'installer invoked\\n'\n\
+             for arg do printf 'argument: %s\\n' \"$arg\"; done\n\
              exit \"$CODEX_TEST_INSTALL_STATUS\"\n\
              INSTALLER\n\
              fi\n\
@@ -36,15 +37,24 @@ fn installer_download_must_finish_before_execution() {
         std::iter::once(root.path().to_owned()).chain(std::env::split_paths(&current_path)),
     )
     .expect("fixture PATH");
-    for (download_status, body, install_status, expected_status, expected_output) in [
-        (0, 1, 0, 0, "installer invoked\n"),
-        (0, 1, 17, 17, "installer invoked\n"),
-        (35, 0, 0, 35, ""),
+    for (download_status, body, install_status, args, expected_status, expected_output) in [
+        (0, 1, 0, &[][..], 0, "installer invoked\n"),
+        (0, 1, 17, &[][..], 17, "installer invoked\n"),
+        (
+            0,
+            1,
+            0,
+            &["--prune-after-install"][..],
+            0,
+            "installer invoked\nargument: --prune-after-install\n",
+        ),
+        (35, 0, 0, &[][..], 35, ""),
         // A failed transfer must not execute even a runnable partial script.
-        (35, 1, 0, 35, ""),
+        (35, 1, 0, &["--prune-after-install"][..], 35, ""),
     ] {
         let output = Command::new("sh")
-            .args(["-c", INSTALL_COMMAND])
+            .args(["-c", INSTALL_COMMAND, "codex-update"])
+            .args(args)
             .env("PATH", &path)
             .env("CODEX_TEST_DOWNLOAD_STATUS", download_status.to_string())
             .env("CODEX_TEST_DOWNLOAD_BODY", body.to_string())

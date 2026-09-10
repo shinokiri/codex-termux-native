@@ -4,6 +4,7 @@ set -eu
 
 RELEASE="${CODEX_RELEASE:-latest}"
 PRUNE_ONLY=false
+PRUNE_AFTER_INSTALL=false
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
 DEFAULT_PREFER_RELEASES_OPENAI_COM="true"
 PREFER_RELEASES_OPENAI_COM="${CODEX_INSTALLER_USE_RELEASES_OPENAI_COM:-$DEFAULT_PREFER_RELEASES_OPENAI_COM}"
@@ -103,12 +104,18 @@ parse_args() {
       --prune)
         PRUNE_ONLY=true
         ;;
+      --prune-after-install)
+        PRUNE_AFTER_INSTALL=true
+        ;;
       --help | -h)
         cat <<EOF
-Usage: install.sh [--release VERSION] | --prune
+Usage: install.sh [--release VERSION] [--prune-after-install] | --prune
 
   --prune  Termux only: remove old installed packages, keeping only current.
            Close all Codex processes first. Does not install or download a release.
+  --prune-after-install
+           Termux only: install and verify the release, then remove old packages.
+           Close all other Codex sessions first.
 
 Environment:
   CODEX_RELEASE          Version to install; overridden by --release.
@@ -774,8 +781,8 @@ cleanup_stale_install_artifacts() {
 }
 
 prune_installed_releases() {
-  # Explicit maintenance after Codex exits: a running old CLI may still need
-  # to launch its matching code-mode host. Do not prune during normal updates.
+  # Old interactive sessions may still need their matching code-mode host.
+  # Updates prune only when requested, after verifying the selected executable.
   if [ ! -L "$CURRENT_LINK" ] ||
     ! releases_path="$(cd "$RELEASES_DIR" && pwd -P)" ||
     ! current_path="$(cd "$CURRENT_LINK" && pwd -P)"; then
@@ -1204,9 +1211,15 @@ else
   fi
 fi
 
-if [ "$PRUNE_ONLY" = "true" ]; then
+if [ "$PRUNE_ONLY" = "true" ] || [ "$PRUNE_AFTER_INSTALL" = "true" ]; then
   if [ "$IS_TERMUX" != "true" ]; then
-    echo "--prune is supported only by the Termux installer." >&2
+    echo "Package pruning is supported only by the Termux installer." >&2
+    exit 1
+  fi
+fi
+if [ "$PRUNE_ONLY" = "true" ]; then
+  if [ "$PRUNE_AFTER_INSTALL" = "true" ]; then
+    echo "Choose either --prune or --prune-after-install." >&2
     exit 1
   fi
   trap release_install_lock EXIT
@@ -1284,6 +1297,9 @@ update_current_link "$release_dir"
 update_visible_command "$release_dir"
 add_to_path
 verify_visible_command
+if [ "$PRUNE_AFTER_INSTALL" = "true" ]; then
+  prune_installed_releases
+fi
 release_install_lock
 handle_conflicting_install
 

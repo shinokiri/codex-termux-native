@@ -96,3 +96,16 @@ fn update_runs_standalone_installer_and_reports_its_exit_status() -> Result<()> 
     }
     Ok(())
 }
+
+#[cfg(not(target_os = "android"))]
+#[test]
+fn update_prune_requires_termux() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    assert_cmd::Command::new(codex_utils_cargo_bin::cargo_bin("codex")?)
+        .env("CODEX_HOME", codex_home.path())
+        .args(["update", "--prune"])
+        .assert()
+        .failure()
+        .stderr(contains("--prune is supported only by Termux installations"));
+    Ok(())
+}

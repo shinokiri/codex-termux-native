@@ -184,7 +184,13 @@ enum Subcommand {
     Completion(CompletionCommand),
 
     /// Update Codex to the latest version.
-    Update,
+    Update {
+        /// Remove old Termux packages after a successful update.
+        ///
+        /// Close all other Codex sessions first.
+        #[arg(long)]
+        prune: bool,
+    },
 
     /// Diagnose local Codex installation, config, auth, and runtime health.
     Doctor(DoctorCommand),
@@ -889,20 +895,26 @@ fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
         std::process::exit(1);
     }
     if let Some(action) = update_action {
-        run_update_action(action)?;
+        run_update_action(action, /*prune*/ false)?;
     }
     Ok(())
 }
 
 /// Run the update action and print the result.
-fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
+fn run_update_action(action: UpdateAction, prune: bool) -> anyhow::Result<()> {
     println!();
-    let cmd_str = action.command_str();
+    let (cmd, args) = action.command_args();
+    let mut args = args.to_vec();
+    let mut cmd_str = action.command_str();
+    if prune {
+        // Android uses sh -c: supply $0, then forward the installer option.
+        args.extend(["codex-update", "--prune-after-install"]);
+        cmd_str.push_str(" codex-update --prune-after-install");
+    }
     println!("Updating Codex via `{cmd_str}`...");
     let status = {
         #[cfg(windows)]
         {
-            let (cmd, args) = action.command_args();
             let cmd = if action == UpdateAction::StandaloneWindows {
                 // These args contain PowerShell metacharacters, so do not let
                 // PATHEXT select a batch shim for this action.
@@ -920,13 +932,12 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
             // this returns a .cmd/.bat shim, std::process::Command routes the
             // absolute path through the system command processor.
             std::process::Command::new(command_path)
-                .args(args)
+                .args(&args)
                 .current_dir(update_cwd.path())
                 .status()?
         }
         #[cfg(not(windows))]
         {
-            let (cmd, args) = action.command_args();
             let command_path = crate::wsl_paths::normalize_for_wsl(cmd);
             let normalized_args: Vec<String> = args
                 .iter()
@@ -961,7 +972,10 @@ fn resolve_windows_update_command_from_path(
         .ok_or_else(|| anyhow::anyhow!("could not find update command `{command}` on PATH"))
 }
 
-fn run_update_command() -> anyhow::Result<()> {
+fn run_update_command(prune: bool) -> anyhow::Result<()> {
+    if prune && !cfg!(target_os = "android") {
+        anyhow::bail!("--prune is supported only by Termux installations");
+    }
     #[cfg(debug_assertions)]
     {
         anyhow::bail!(
@@ -976,7 +990,7 @@ fn run_update_command() -> anyhow::Result<()> {
                 "Could not detect the Codex installation method. Please update manually: https://developers.openai.com/codex/cli/"
             );
         };
-        run_update_action(action)
+        run_update_action(action, prune)
     }
 }
 
@@ -1645,13 +1659,13 @@ async fn cli_main(
             )?;
             print_completion(completion_cli);
         }
-        Some(Subcommand::Update) => {
+        Some(Subcommand::Update { prune }) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
                 root_remote_auth_token_env.as_deref(),
                 "update",
             )?;
-            run_update_command()?;
+            run_update_command(prune)?;
         }
         Some(Subcommand::Doctor(doctor_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -2568,7 +2582,7 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::Login(_)) => Some("login"),
         Some(Subcommand::Logout(_)) => Some("logout"),
         Some(Subcommand::Completion(_)) => Some("completion"),
-        Some(Subcommand::Update) => Some("update"),
+        Some(Subcommand::Update { .. }) => Some("update"),
         Some(Subcommand::Cloud(_)) => Some("cloud"),
         Some(Subcommand::Sandbox(_)) => Some("sandbox"),
         Some(Subcommand::Debug(_)) => Some("debug"),
@@ -3761,7 +3775,15 @@ mod tests {
     #[test]
     fn update_parses_as_update_subcommand() {
         let cli = MultitoolCli::try_parse_from(["codex", "update"]).expect("parse");
-        assert!(matches!(cli.subcommand, Some(Subcommand::Update)));
+        assert!(matches!(
+            cli.subcommand,
+            Some(Subcommand::Update { prune: false })
+        ));
+        let cli = MultitoolCli::try_parse_from(["codex", "update", "--prune"]).expect("parse");
+        assert!(matches!(
+            cli.subcommand,
+            Some(Subcommand::Update { prune: true })
+        ));
     }
 
     #[test]

@@ -14,16 +14,18 @@ from scripts.install.test_install_sh import run_installer_in
 from scripts.install.test_install_sh import write_executable
 
 
-def release_fixture(root, revision, *, cli_version="0.153.4"):
+def release_fixture(root, revision, *, cli_version="0.153.4", fail_visible_check=False):
     version = f"0.153.4+termux.{revision}"
     package = root / f"fixture-{revision}"
     (package / "bin").mkdir(parents=True)
     (package / "lib").mkdir()
     (package / "codex-package.json").write_text(json.dumps({"version": cli_version}))
     (package / "BUILD-INFO.json").write_text(json.dumps({"release_version": version}))
-    write_executable(
-        package / "bin/codex", f"#!/bin/sh\necho 'codex-cli {cli_version}'\n"
-    )
+    cli_script = "#!/bin/sh\n"
+    if fail_visible_check:
+        cli_script += 'case "$0" in */install-bin/codex) exit 23;; esac\n'
+    cli_script += f"echo 'codex-cli {cli_version}'\n"
+    write_executable(package / "bin/codex", cli_script)
     write_executable(package / "bin/codex-code-mode-host", "#!/bin/sh\nexit 0\n")
     archive_path = root / "codex-package-aarch64-linux-android.tar.gz"
     with tarfile.open(archive_path, "w:gz") as archive:
@@ -48,6 +50,78 @@ def release_fixture(root, revision, *, cli_version="0.153.4"):
 
 
 class TermuxInstallerTest(unittest.TestCase):
+    def test_update_and_prune_keeps_only_current_even_without_a_new_release(self):
+        for next_revision in (2, 3):
+            with (
+                self.subTest(revision=next_revision),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                fixtures = {}
+                for revision in (1, 2):
+                    fixtures[revision] = release_fixture(root, revision)
+                    result, _ = run_installer_in(
+                        root, "latest", platform="android", **fixtures[revision]
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                codex_home = root / "codex-home"
+                current = codex_home / "packages/standalone/current"
+                releases = current.resolve().parent
+                self.assertEqual(len(list(releases.iterdir())), 2)
+                user_data = {}
+                for name in ("sessions/keep.jsonl", "auth.json", "config.toml"):
+                    path = codex_home / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(name)
+                    user_data[path] = name
+                if next_revision == 3:
+                    fixtures[3] = release_fixture(root, 3)
+                (root / "requests.log").unlink()
+
+                result, requests = run_installer_in(
+                    root,
+                    "latest",
+                    platform="android",
+                    installer_args=("--prune-after-install",),
+                    **fixtures[next_revision],
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(
+                    current.resolve().name,
+                    f"0.153.4+termux.{next_revision}-aarch64-linux-android",
+                )
+                self.assertEqual(list(releases.iterdir()), [current.resolve()])
+                self.assertTrue((current / "bin/codex-code-mode-host").is_file())
+                self.assertEqual(
+                    {path: path.read_text() for path in user_data}, user_data
+                )
+                self.assertEqual(
+                    sum(url.endswith(".tar.gz") for url in requests),
+                    int(next_revision == 3),
+                )
+
+    def test_update_and_prune_waits_for_visible_command_verification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result, _ = run_installer_in(
+                root, "latest", platform="android", **release_fixture(root, 1)
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            current = root / "codex-home/packages/standalone/current"
+            previous = current.resolve()
+            result, _ = run_installer_in(
+                root,
+                "latest",
+                platform="android",
+                installer_args=("--prune-after-install",),
+                **release_fixture(root, 2, fail_visible_check=True),
+            )
+            self.assertEqual(result.returncode, 23, result.stdout + result.stderr)
+            self.assertNotEqual(current.resolve(), previous)
+            self.assertTrue((previous / "bin/codex").is_file())
+            self.assertTrue((previous / "bin/codex-code-mode-host").is_file())
+            self.assertNotIn("Removed old package:", result.stdout)
+
     def test_prune_keeps_only_current_without_touching_user_data_or_network(self):
         with tempfile.TemporaryDirectory(prefix="termux prune ") as temporary:
             root = Path(temporary)
@@ -242,7 +316,13 @@ class TermuxInstallerTest(unittest.TestCase):
             previous = os.readlink(current)
             broken = release_fixture(root, 2)
             broken["archive_path"].write_bytes(b"incomplete download")
-            result, _ = run_installer_in(root, "latest", platform="android", **broken)
+            result, _ = run_installer_in(
+                root,
+                "latest",
+                platform="android",
+                installer_args=("--prune-after-install",),
+                **broken,
+            )
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(os.readlink(current), previous)
             self.assertTrue((current / "bin/codex").is_file())

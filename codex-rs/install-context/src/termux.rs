@@ -7,7 +7,7 @@ use crate::InstallContext;
 
 pub const LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/shinokiri/codex-termux-native/releases/latest";
-pub const INSTALL_COMMAND: &str = r#"codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh) && printf '%s\n' "$codex_installer" | CODEX_NON_INTERACTIVE=1 sh"#;
+pub const INSTALL_COMMAND: &str = r#"codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh) && printf '%s\n' "$codex_installer" | CODEX_NON_INTERACTIVE=1 sh -s -- "$@""#;
 pub const VERSION_FILENAME: &str = "version-termux.json";
 
 #[derive(Deserialize)]

@@ -129,8 +129,29 @@ codex update
 Older manually unpacked candidates need that initial installation once. The
 installer prints any required PATH setup instructions.
 
-To reclaim old installed packages, close all Codex processes and then use the
-installer's explicit cleanup operation:
+To update and reclaim old installed packages in one command, close all other
+Codex sessions first and run:
+
+```sh
+codex update --prune
+```
+
+The installer switches `current` and verifies the new executable before pruning,
+while still holding the existing installer lock. It keeps only `current`, with
+no rollback version. If the latest release is already installed, it still
+performs cleanup without downloading the package again. A failed installation
+or executable verification does not run pruning.
+
+If your installed CLI predates `codex update --prune`, use the current installer
+once to update and clean up:
+
+```sh
+codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh) &&
+  printf '%s\n' "$codex_installer" | CODEX_NON_INTERACTIVE=1 sh -s -- --prune-after-install
+```
+
+For cleanup without updating, close all Codex processes and use the installer's
+standalone cleanup operation:
 
 ```sh
 codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/releases/latest/download/install.sh) &&
@@ -142,10 +163,9 @@ It removes older package and legacy platform-npm installs, along with temporary
 files left by interrupted installations. It validates `current` before cleanup
 and leaves unrecognized directories alone. It uses the existing installer lock
 and does not download a version, change PATH, or remove sessions, authentication
-or configuration. Normal installation and
-`codex update` retain older packages until this explicit operation, because an
-already-running CLI may still need its matching code-mode host. Do not launch
-another Codex process during cleanup.
+or configuration. Normal installation and `codex update` without `--prune`
+retain older packages, because an already-running CLI may still need its
+matching code-mode host. Do not launch another Codex process during cleanup.
 
 ## Status
 
