@@ -106,6 +106,8 @@ fn update_prune_requires_termux() -> Result<()> {
         .args(["update", "--prune"])
         .assert()
         .failure()
-        .stderr(contains("--prune is supported only by Termux installations"));
+        .stderr(contains(
+            "--prune is supported only by Termux installations",
+        ));
     Ok(())
 }
