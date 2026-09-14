@@ -37,8 +37,12 @@ async fn pair(idle_timeout: Option<Duration>) -> Result<(WsStream, WebSocketStre
 #[tokio::test]
 async fn idle_transport_expires_without_waiting_for_a_server_ping() -> Result<()> {
     let (mut client, mut server) = pair(Some(Duration::from_millis(100))).await?;
-    assert!(timeout(Duration::from_secs(3), client.next()).await?.is_none());
-    assert!(client.is_closed());
+    assert!(
+        timeout(Duration::from_secs(3), client.next())
+            .await?
+            .is_none()
+    );
+    assert!(client.idle_expired());
     let closed = timeout(Duration::from_secs(3), server.next()).await?;
     assert!(closed.is_none() || closed.is_some_and(|message| message.is_err()));
     Ok(())
@@ -53,13 +57,19 @@ async fn active_response_keeps_pong_replies_after_the_idle_timeout() -> Result<(
     tokio::time::sleep(Duration::from_millis(200)).await;
     server.send(Message::Ping(vec![1, 2, 3, 4].into())).await?;
     assert_eq!(
-        timeout(Duration::from_secs(3), server.next()).await?.transpose()?,
+        timeout(Duration::from_secs(3), server.next())
+            .await?
+            .transpose()?,
         Some(Message::Pong(vec![1, 2, 3, 4].into()))
     );
-    assert!(!client.is_closed());
+    assert!(!client.idle_expired());
     client.mark_idle().await?;
-    assert!(timeout(Duration::from_secs(3), client.next()).await?.is_none());
-    assert!(client.is_closed());
+    assert!(
+        timeout(Duration::from_secs(3), client.next())
+            .await?
+            .is_none()
+    );
+    assert!(client.idle_expired());
     Ok(())
 }
 
@@ -77,12 +87,18 @@ async fn a_new_request_cancels_idle_expiry_until_it_completes() -> Result<()> {
     let response = Message::Text("second response".into());
     server.send(response.clone()).await?;
     assert_eq!(
-        timeout(Duration::from_secs(3), client.next()).await?.transpose()?,
+        timeout(Duration::from_secs(3), client.next())
+            .await?
+            .transpose()?,
         Some(response)
     );
-    assert!(!client.is_closed());
+    assert!(!client.idle_expired());
     client.mark_idle().await?;
-    assert!(timeout(Duration::from_secs(3), client.next()).await?.is_none());
+    assert!(
+        timeout(Duration::from_secs(3), client.next())
+            .await?
+            .is_none()
+    );
     Ok(())
 }
 
@@ -93,10 +109,12 @@ async fn an_unlimited_transport_still_answers_idle_pings() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(200)).await;
     server.send(Message::Ping(vec![5, 6].into())).await?;
     assert_eq!(
-        timeout(Duration::from_secs(3), server.next()).await?.transpose()?,
+        timeout(Duration::from_secs(3), server.next())
+            .await?
+            .transpose()?,
         Some(Message::Pong(vec![5, 6].into()))
     );
-    assert!(!client.is_closed());
+    assert!(!client.idle_expired());
     Ok(())
 }
 

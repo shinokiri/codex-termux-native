@@ -4,6 +4,9 @@ use codex_websocket_client::WebSocketConnection;
 use futures::SinkExt;
 use futures::StreamExt;
 use std::future::pending;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::sync::mpsc;
@@ -43,6 +46,7 @@ pub(super) struct WsStream {
     tx_command: mpsc::Sender<WsCommand>,
     rx_message: mpsc::UnboundedReceiver<Result<Message, WsError>>,
     pump_task: tokio::task::JoinHandle<()>,
+    idle_expired: Arc<AtomicBool>,
 }
 
 enum WsCommand {
@@ -59,6 +63,8 @@ impl WsStream {
     pub(super) fn new(inner: WebSocketConnection, idle_timeout: Option<Duration>) -> Self {
         let (tx_command, mut rx_command) = mpsc::channel::<WsCommand>(32);
         let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, WsError>>();
+        let idle_expired = Arc::new(AtomicBool::new(false));
+        let pump_idle_expired = Arc::clone(&idle_expired);
         let pump_task = tokio::spawn(async move {
             let mut inner = inner;
             let mut idle = idle_timeout.map(IdleDeadline::new);
@@ -91,9 +97,13 @@ impl WsStream {
                             Some(duration) => tokio::time::sleep(duration).await,
                             None => pending().await,
                         }
-                    } => break,
+                    } => {
+                        pump_idle_expired.store(true, Ordering::Release);
+                        break;
+                    }
                     message = inner.next() => {
                         if idle.as_ref().is_some_and(|deadline| deadline.remaining().is_zero()) {
+                            pump_idle_expired.store(true, Ordering::Release);
                             break;
                         }
                         let Some(message) = message else {
@@ -129,11 +139,14 @@ impl WsStream {
             tx_command,
             rx_message,
             pump_task,
+            idle_expired,
         }
     }
 
-    pub(super) fn is_closed(&self) -> bool {
-        self.tx_command.is_closed()
+    pub(super) fn idle_expired(&self) -> bool {
+        // Only proactive idle expiry changes the caller's connection reuse decision.
+        // Peer closure and stream errors retain the existing response/retry path.
+        self.idle_expired.load(Ordering::Acquire)
     }
 
     async fn request(
@@ -148,11 +161,13 @@ impl WsStream {
     }
 
     pub(super) async fn mark_idle(&self) -> Result<(), WsError> {
-        self.request(|tx_result| WsCommand::MarkIdle { tx_result }).await
+        self.request(|tx_result| WsCommand::MarkIdle { tx_result })
+            .await
     }
 
     pub(super) async fn send(&self, message: Message) -> Result<(), WsError> {
-        self.request(|tx_result| WsCommand::Send { message, tx_result }).await
+        self.request(|tx_result| WsCommand::Send { message, tx_result })
+            .await
     }
 
     pub(super) async fn next(&mut self) -> Option<Result<Message, WsError>> {

@@ -119,7 +119,7 @@ impl ResponsesWebsocketConnection {
             .lock()
             .await
             .as_ref()
-            .is_none_or(WsStream::is_closed)
+            .is_none_or(WsStream::idle_expired)
     }
 
     #[instrument(
@@ -1151,3 +1151,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "responses_websocket_mobile_tests.rs"]
+mod mobile_tests;
