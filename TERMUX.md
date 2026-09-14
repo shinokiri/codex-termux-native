@@ -363,3 +363,6 @@ cells and clean host shutdown. The script itself still needs validation with
 the candidate. Python is only a dependency of this optional check, not the CLI.
 This does not test the interactive UI, MCP servers, account login or session
 resume, and does not install the package or alter conversation archives.
+
+
+Mobile idle networking: an Android Responses WebSocket is released after ten seconds with no active model request. Requests that are still generating continue to handle heartbeats normally, and nearby tool requests can reuse the connection. The next request reconnects after an idle release. The timeout uses both monotonic elapsed time and wall time; a resume packet cannot renew the idle period after suspend. No wakeup alarm is added. The built-in Statsig metrics exporter is disabled on Android to avoid periodic background uploads; explicitly configured OTLP exporters remain available.
