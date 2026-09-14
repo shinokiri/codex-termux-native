@@ -54,13 +54,21 @@ async fn completed_requests_reuse_the_transport_then_automatically_expire() -> R
             tokio::time::sleep(Duration::from_millis(300)).await;
             server.send(Message::Ping(vec![9, 8].into())).await?;
             assert_eq!(
-                timeout(Duration::from_secs(3), server.next()).await?.transpose()?,
+                timeout(Duration::from_secs(3), server.next())
+                    .await?
+                    .transpose()?,
                 Some(Message::Pong(vec![9, 8].into()))
             );
-            server.send(Message::Text(json!({
-                "type": "response.completed",
-                "response": {"id": id, "output": []}
-            }).to_string().into())).await?;
+            server
+                .send(Message::Text(
+                    json!({
+                        "type": "response.completed",
+                        "response": {"id": id, "output": []}
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await?;
         }
         let closed = timeout(Duration::from_secs(3), server.next()).await?;
         assert!(closed.is_none() || closed.is_some_and(|message| message.is_err()));
@@ -88,11 +96,9 @@ async fn completed_requests_reuse_the_transport_then_automatically_expire() -> R
             client_metadata: None,
             access_programs: None,
         });
-        let mut events = connection.stream_request(
-            request,
-            index != 0,
-            /*turn_state*/ None,
-        ).await?;
+        let mut events = connection
+            .stream_request(request, index != 0, /*turn_state*/ None)
+            .await?;
         let mut completed = None;
         while let Some(event) = timeout(Duration::from_secs(3), events.next()).await? {
             if let ResponseEvent::Completed { response_id, .. } = event? {
