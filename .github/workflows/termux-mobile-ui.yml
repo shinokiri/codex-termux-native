@@ -1,24 +1,23 @@
-name: Termux mobile idle transport checks
+name: Termux mobile UI idle checks
 
 on:
   push:
     branches: ["termux/mobile-idle-*"]
     paths:
-      - ".github/workflows/termux-mobile-idle.yml"
-      - "codex-rs/codex-api/**"
-      - "codex-rs/otel/**"
-      - "codex-rs/core/**"
+      - ".github/workflows/termux-mobile-ui.yml"
+      - "codex-rs/tui/**"
+      - "codex-rs/analytics/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: termux-mobile-idle-${{ github.ref }}
+  group: termux-mobile-ui-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  transport-tests:
+  ui-analytics-tests:
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
@@ -41,28 +40,24 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.3"
-      - name: Verify idle expiry, active requests, and telemetry behavior
-        run: just test --locked -p codex-api -p codex-otel
-      - name: Verify callers reconnect and retain existing retry behavior
-        run: >-
-          just test --locked -p codex-core --lib --test all
-          -E 'test(websocket) or test(responses_retry) or test(retry_after)'
-      - name: Check affected transport and telemetry crates
+      - name: Verify analytics delivery and TUI behavior
+        run: just test --locked -p codex-analytics -p codex-tui
+      - name: Check affected analytics and TUI crates
         run: |
-          just fix -p codex-api --locked --lib
-          just fix -p codex-otel --locked --lib
+          just fix -p codex-analytics --locked --lib
+          just fix -p codex-tui --locked --lib
       - name: Format the final changes
         run: just fmt
       - name: Retain corrections for review
         if: always() && !cancelled()
         run: |
-          git diff --binary > "${RUNNER_TEMP}/mobile-idle-corrections.patch"
+          git diff --binary > "${RUNNER_TEMP}/mobile-ui-corrections.patch"
           git diff --exit-code
       - name: Upload corrections
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: termux-mobile-idle-corrections
-          path: ${{ runner.temp }}/mobile-idle-corrections.patch
+          name: termux-mobile-ui-corrections
+          path: ${{ runner.temp }}/mobile-ui-corrections.patch
           if-no-files-found: ignore
           retention-days: 3
