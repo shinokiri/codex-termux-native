@@ -12,7 +12,7 @@ on:
       revision:
         description: "Internal package revision; Codex keeps the official version"
         type: string
-        default: "7"
+        default: "8"
       retry:
         description: "Validate the current prepared source again after fixing a failure"
         type: boolean
@@ -54,7 +54,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '7' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '8' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -75,7 +75,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '7' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '8' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -126,15 +126,29 @@ jobs:
     with:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
+  mobile-idle:
+    needs: [prepare, format]
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/termux-mobile-idle.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.source_ref }}
+
+  mobile-ui:
+    needs: [prepare, format]
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/termux-mobile-ui.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.source_ref }}
+
   android:
-    needs: [prepare, format, regression, native, websocket]
+    needs: [prepare, format, regression, native, websocket, mobile-idle, mobile-ui]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/termux-build.yml
     with:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
   publish:
-    needs: [prepare, format, regression, native, websocket, android]
+    needs: [prepare, format, regression, native, websocket, mobile-idle, mobile-ui, android]
     if: needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

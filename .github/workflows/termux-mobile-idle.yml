@@ -2,19 +2,24 @@ name: Termux mobile idle transport checks
 
 on:
   push:
-    branches: ["termux/mobile-idle-*"]
+    branches: ["termux/**"]
     paths:
       - ".github/workflows/termux-mobile-idle.yml"
       - "codex-rs/codex-api/**"
       - "codex-rs/otel/**"
       - "codex-rs/core/**"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: termux-mobile-idle-${{ github.ref }}
+  group: termux-mobile-idle-${{ inputs.source_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,6 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
@@ -43,10 +49,6 @@ jobs:
           version: "0.11.3"
       - name: Verify idle expiry, active requests, and telemetry behavior
         run: just test --locked -p codex-api -p codex-otel
-      - name: Verify callers reconnect and retain existing retry behavior
-        run: >-
-          just test --locked -p codex-core --lib --test all
-          -E 'test(websocket) or test(responses_retry) or test(retry_after)'
       - name: Check affected transport and telemetry crates
         run: |
           just fix -p codex-api --locked --lib

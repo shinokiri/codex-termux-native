@@ -45,7 +45,13 @@ jobs:
       - name: Test transport recovery and existing retry behavior
         run: >-
           just test --locked -p codex-core --lib --test all
-          -E 'test(websocket) or test(responses_retry) or test(retry_after)'
+          -E '(test(websocket) or test(responses_retry) or test(retry_after))
+          and not test(websocket_recovery::)'
+      - name: Require the recovery scenarios to run
+        # A missing recovery module must fail instead of passing the older suite alone.
+        run: >-
+          just test --locked -p codex-core --lib --test all
+          -E 'test(websocket_recovery::)'
       - name: Check the affected crate with Clippy
         run: just fix -p codex-core --locked --lib
       - name: Check generated changes

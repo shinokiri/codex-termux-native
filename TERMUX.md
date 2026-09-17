@@ -391,3 +391,16 @@ resume, and does not install the package or alter conversation archives.
 
 
 Mobile idle networking: an Android Responses WebSocket is released after ten seconds with no active model request. Requests that are still generating continue to handle heartbeats normally, and nearby tool requests can reuse the connection. The next request reconnects after an idle release. The timeout uses both monotonic elapsed time and wall time; a resume packet cannot renew the idle period after suspend. No wakeup alarm is added. The built-in Statsig metrics exporter is disabled on Android to avoid periodic background uploads; explicitly configured OTLP exporters remain available.
+
+
+Android also uses startup, explicit status queries, inference notifications and
+recovery events to refresh account usage instead of polling while idle. Analytics
+event uploads default to off on Android and continue to honor an explicit choice.
+
+Packaging revision 8 integrates these deployed mobile changes and Responses
+WebSocket recovery into the release source. Release builds require the CLI,
+native, WebSocket recovery, mobile transport and mobile UI regressions against
+the same prepared commit. The dedicated recovery test selection fails when the
+recovery scenarios are absent. The ten-second mobile idle timeout preserves the
+deployed behavior; it is not a measured optimum for every workload, and long tool
+waits incur a new connection and full request after expiry.
