@@ -103,6 +103,7 @@ mod mcp_startup_refresh_http_proxy;
 mod mcp_tool_cache;
 mod mcp_tool_exposure;
 mod mcp_turn_metadata;
+mod mcp_user_verification;
 mod model_overrides;
 mod model_runtime_selectors;
 mod model_switching;
@@ -189,6 +190,7 @@ mod user_shell_cmd;
 mod view_image;
 mod web_search;
 mod websocket_fallback;
+mod websocket_recovery;
 mod window_headers;
 #[cfg(target_os = "windows")]
 mod windows_sandbox;

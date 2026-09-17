@@ -102,13 +102,18 @@ async fn luna_reserve_periodic_refresh_adapts_without_an_experiment_banner() -> 
         let before = std::time::Instant::now();
         app.handle_event(&mut tui, &mut session, loaded).await?;
         let after = std::time::Instant::now();
-        let interval = app.chat_widget.rate_limit_refresh_interval().unwrap();
-        assert_eq!(interval, Duration::from_secs(seconds));
-        let deadline = app
-            .rate_limit_refresh_state
-            .poll_deadline(interval)
-            .unwrap();
-        assert!(deadline >= before + interval && deadline <= after + interval);
+        let interval = app.chat_widget.rate_limit_refresh_interval();
+        if cfg!(target_os = "android") {
+            assert_eq!(interval, None);
+        } else {
+            let interval = interval.unwrap();
+            assert_eq!(interval, Duration::from_secs(seconds));
+            let deadline = app
+                .rate_limit_refresh_state
+                .poll_deadline(interval)
+                .unwrap();
+            assert!(deadline >= before + interval && deadline <= after + interval);
+        }
         let requests = backend.received_requests().await.unwrap();
         let usage = requests
             .iter()

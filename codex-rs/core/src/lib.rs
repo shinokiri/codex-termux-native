@@ -16,6 +16,7 @@ mod realtime_prompt;
 mod responses_metadata;
 mod responses_retry;
 pub(crate) mod session;
+mod websocket_fallback;
 pub use codex_protocol::turn_input::NotSubmittedReason;
 pub use codex_protocol::turn_input::RecoverTurnRequest;
 pub use codex_protocol::turn_input::StartIfIdleSubmission;
@@ -68,6 +69,7 @@ mod exec_policy;
 #[cfg(test)]
 mod git_info_tests;
 mod guardian;
+pub mod guardian_review;
 mod hook_mcp_executor;
 mod hook_runtime;
 mod image_preparation;

@@ -220,6 +220,31 @@ Linux tests exercise both the standard-library backend and the actual Android
 Android target check catches conditional-compilation errors. Neither establishes
 that every Android filesystem supports locking.
 
+## Responses WebSocket recovery
+
+This fork keeps the provider's fast stream retry budget. With the existing
+`unbounded_connection_retries` feature enabled (the default), an interactive
+sampling request that still encounters WebSocket stream failures or connection
+timeouts waits and retries WebSockets at 5, 10, 20, 40 and then at most 60 second
+intervals, honoring an explicit server retry delay. This extends the existing wait-for-network behavior; disabling that
+feature restores bounded retries. Terminal API errors retain their existing
+handling, and internal sessions and remote compaction retain their bounded policy.
+
+When HTTP fallback does activate, including an HTTP 426 handshake response, it
+lasts for a 30 second cooldown. The next streaming request then tries WebSockets
+again with fresh connection and incremental-response state, retaining the full
+conversation and the turn's routing token. Active HTTP responses finish normally;
+there is no background probe or automatic request while the conversation is idle.
+A failed recovery can start a new cooldown. Logs record both fallback and the
+subsequent WebSocket recovery attempt. This is a preference, not a guarantee that
+HTTPS is never used.
+
+The regression tests cover repeated disconnects beyond the fast retry budget,
+both fallback entry paths, cooldown across turns, successful WebSocket recovery,
+and preservation of replies received over HTTP. They use local mock endpoints
+and no model credentials. The release pipeline runs these checks before building
+an Android release candidate.
+
 ## Development checks
 
 The `Termux native checks` workflow runs on relevant pushes to `termux/**`; build
@@ -363,3 +388,19 @@ cells and clean host shutdown. The script itself still needs validation with
 the candidate. Python is only a dependency of this optional check, not the CLI.
 This does not test the interactive UI, MCP servers, account login or session
 resume, and does not install the package or alter conversation archives.
+
+
+Mobile idle networking: an Android Responses WebSocket is released after ten seconds with no active model request. Requests that are still generating continue to handle heartbeats normally, and nearby tool requests can reuse the connection. The next request reconnects after an idle release. The timeout uses both monotonic elapsed time and wall time; a resume packet cannot renew the idle period after suspend. No wakeup alarm is added. The built-in Statsig metrics exporter is disabled on Android to avoid periodic background uploads; explicitly configured OTLP exporters remain available.
+
+
+Android also uses startup, explicit status queries, inference notifications and
+recovery events to refresh account usage instead of polling while idle. Analytics
+event uploads default to off on Android and continue to honor an explicit choice.
+
+Packaging revision 8 integrates these deployed mobile changes and Responses
+WebSocket recovery into the release source. Release builds require the CLI,
+native, WebSocket recovery, mobile transport and mobile UI regressions against
+the same prepared commit. The dedicated recovery test selection fails when the
+recovery scenarios are absent. The ten-second mobile idle timeout preserves the
+deployed behavior; it is not a measured optimum for every workload, and long tool
+waits incur a new connection and full request after expiry.

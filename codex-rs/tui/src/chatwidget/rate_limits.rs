@@ -186,9 +186,11 @@ fn has_usable_workspace_credits(credits: &CreditsSnapshot) -> bool {
 }
 
 impl ChatWidget {
-    /// Poll more often near exhaustion for every ChatGPT account, independently of experiments.
+    /// Poll more often near exhaustion on desktop. Android uses startup, explicit
+    /// status/usage requests, inference notifications, and recovery events instead
+    /// of periodic network traffic while the terminal is idle or waiting on tools.
     pub(crate) fn rate_limit_refresh_interval(&self) -> Option<std::time::Duration> {
-        if !self.should_prefetch_rate_limits() {
+        if cfg!(target_os = "android") || !self.should_prefetch_rate_limits() {
             return None;
         }
         // Ignore unrelated model buckets; watch ordinary usage and the selected model's bucket.

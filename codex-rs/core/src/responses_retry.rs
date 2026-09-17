@@ -60,11 +60,21 @@ pub(crate) async fn handle_retryable_response_stream_error(
         .features
         .enabled(Feature::UnboundedConnectionRetries)
         && matches!(request, ResponsesStreamRequest::Sampling)
-        && matches!(err.details(), CodexErrorDetails::ConnectionFailed(_))
+        && (matches!(err.details(), CodexErrorDetails::ConnectionFailed(_))
+            // Preserve fast retries, then keep waiting on the preferred transport when a
+            // WebSocket stream disconnects or its connection attempt times out.
+            || (retry_state.retries >= max_retries
+                && sess.services.model_client.responses_websocket_enabled()
+                && matches!(
+                    err.details(),
+                    CodexErrorDetails::Stream(_) | CodexErrorDetails::RequestTimeout
+                )))
         && !turn_context.session_source.is_internal()
         && !turn_context.provider.info().is_amazon_bedrock()
     {
-        let retry_delay = retry_state.connection_retry_delay;
+        let retry_delay = err
+            .retry_delay()
+            .unwrap_or(retry_state.connection_retry_delay);
         warn!(
             turn_id = %turn_context.sub_id,
             error = %err,
@@ -76,7 +86,8 @@ pub(crate) async fn handle_retryable_response_stream_error(
         retry_state.connection_retries = retry_state.connection_retries.saturating_add(1);
         codex_client::record_retry!(retry_state.connection_retries, retry_delay, operation);
         tokio::time::sleep(retry_delay).await;
-        retry_state.connection_retry_delay = retry_delay
+        retry_state.connection_retry_delay = retry_state
+            .connection_retry_delay
             .saturating_mul(2)
             .min(MAX_CONNECTION_RETRY_DELAY);
         return Ok(());
