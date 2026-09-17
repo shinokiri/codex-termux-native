@@ -220,6 +220,31 @@ Linux tests exercise both the standard-library backend and the actual Android
 Android target check catches conditional-compilation errors. Neither establishes
 that every Android filesystem supports locking.
 
+## Responses WebSocket recovery
+
+This fork keeps the provider's fast stream retry budget. With the existing
+`unbounded_connection_retries` feature enabled (the default), an interactive
+sampling request that still encounters WebSocket stream failures or connection
+timeouts waits and retries WebSockets at 5, 10, 20, 40 and then at most 60 second
+intervals, honoring an explicit server retry delay. This extends the existing wait-for-network behavior; disabling that
+feature restores bounded retries. Terminal API errors retain their existing
+handling, and internal sessions and remote compaction retain their bounded policy.
+
+When HTTP fallback does activate, including an HTTP 426 handshake response, it
+lasts for a 30 second cooldown. The next streaming request then tries WebSockets
+again with fresh connection and incremental-response state, retaining the full
+conversation and the turn's routing token. Active HTTP responses finish normally;
+there is no background probe or automatic request while the conversation is idle.
+A failed recovery can start a new cooldown. Logs record both fallback and the
+subsequent WebSocket recovery attempt. This is a preference, not a guarantee that
+HTTPS is never used.
+
+The regression tests cover repeated disconnects beyond the fast retry budget,
+both fallback entry paths, cooldown across turns, successful WebSocket recovery,
+and preservation of replies received over HTTP. They use local mock endpoints
+and no model credentials. The release pipeline runs these checks before building
+an Android release candidate.
+
 ## Development checks
 
 The `Termux native checks` workflow runs on relevant pushes to `termux/**`; build

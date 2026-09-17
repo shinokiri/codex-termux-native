@@ -119,15 +119,22 @@ jobs:
     with:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
+  websocket:
+    needs: [prepare, format]
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/termux-websocket.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.source_ref }}
+
   android:
-    needs: [prepare, format, regression, native]
+    needs: [prepare, format, regression, native, websocket]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/termux-build.yml
     with:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
   publish:
-    needs: [prepare, format, regression, native, android]
+    needs: [prepare, format, regression, native, websocket, android]
     if: needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

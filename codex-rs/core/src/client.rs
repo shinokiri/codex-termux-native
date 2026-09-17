@@ -27,8 +27,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 
 use async_channel::Sender;
 use codex_api::AgentIdentityTelemetry;
@@ -128,6 +126,7 @@ use crate::feedback_tags;
 use crate::responses_metadata::CodexResponsesMetadata;
 use crate::responses_metadata::subagent_header_value;
 use crate::util::emit_feedback_auth_recovery_tags;
+use crate::websocket_fallback::WebsocketFallback;
 use codex_feedback::FeedbackRequestTags;
 use codex_feedback::emit_feedback_request_tags_with_auth_env;
 use codex_login::auth::AgentIdentityAuthPolicy;
@@ -215,7 +214,7 @@ struct ModelClientState {
     concurrent_reasoning_summaries_enabled: bool,
     include_attestation: bool,
     attestation_provider: Option<Arc<dyn AttestationProvider>>,
-    disable_websockets: AtomicBool,
+    websocket_fallback: WebsocketFallback,
     agent_identity_session_fallback: AgentIdentitySessionFallback,
     cached_websocket_session: StdMutex<WebsocketSession>,
 }
@@ -247,8 +246,8 @@ impl RequestRouteTelemetry {
 /// This holds configuration and state that should be shared across turns within a Codex session
 /// (auth, provider selection, thread id, and transport fallback state).
 ///
-/// WebSocket fallback is session-scoped: once a turn activates the HTTP fallback, subsequent turns
-/// will also use HTTP for the remainder of the session.
+/// WebSocket fallback is shared across turns. After a cooldown, the next streaming request
+/// retries WebSockets so a temporary outage does not disable them for the rest of the session.
 ///
 /// Turn-scoped settings (model selection, reasoning controls, telemetry context, and turn
 /// metadata) are passed explicitly to the relevant methods to keep turn lifetime visible at the
@@ -474,7 +473,7 @@ impl ModelClient {
                 concurrent_reasoning_summaries_enabled,
                 include_attestation,
                 attestation_provider,
-                disable_websockets: AtomicBool::new(false),
+                websocket_fallback: WebsocketFallback::default(),
                 agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
             }),
@@ -553,9 +552,8 @@ impl ModelClient {
         session_telemetry: &SessionTelemetry,
         _model_info: &ModelInfo,
     ) -> bool {
-        let websocket_enabled = self.responses_websocket_enabled();
-        let activated =
-            websocket_enabled && !self.state.disable_websockets.swap(true, Ordering::Relaxed);
+        let activated = self.state.provider.info().supports_websockets
+            && self.state.websocket_fallback.activate();
         if activated {
             warn!("falling back to HTTP");
             session_telemetry.counter(
@@ -1012,7 +1010,7 @@ impl ModelClient {
     /// WebSocket use is controlled by provider capability and session-scoped fallback state.
     pub fn responses_websocket_enabled(&self) -> bool {
         if !self.state.provider.info().supports_websockets
-            || self.state.disable_websockets.load(Ordering::Relaxed)
+            || self.state.websocket_fallback.is_active()
         {
             return false;
         }
@@ -2038,6 +2036,10 @@ impl ModelClientSession {
         let wire_api = self.client.state.provider.info().wire_api;
         match wire_api {
             WireApi::Responses => {
+                if self.client.state.websocket_fallback.try_expire() {
+                    self.websocket_session = WebsocketSession::default();
+                    warn!("retrying WebSockets after HTTP fallback cooldown");
+                }
                 if self.client.responses_websocket_enabled() {
                     let request_trace = current_span_w3c_trace_context();
                     match self
@@ -2077,7 +2079,7 @@ impl ModelClientSession {
         }
     }
 
-    /// Permanently disables WebSockets for this Codex session and resets WebSocket state.
+    /// Temporarily disables WebSockets for this Codex session and resets WebSocket state.
     ///
     /// This is used after exhausting the provider retry budget, to force subsequent requests onto
     /// the HTTP transport.
