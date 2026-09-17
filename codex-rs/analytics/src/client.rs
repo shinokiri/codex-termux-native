@@ -244,7 +244,10 @@ impl AnalyticsEventsClient {
     ) -> Self {
         let destination = AnalyticsEventsDestination::from_base_url(base_url);
         Self {
-            queue: (analytics_enabled != Some(false))
+            // Mobile tool waits must not create background event-upload traffic.
+            // Preserve an explicit user choice to enable or disable analytics.
+            queue: analytics_enabled
+                .unwrap_or(!cfg!(target_os = "android"))
                 .then(|| AnalyticsEventsQueue::new(Arc::clone(&auth_manager), destination)),
         }
     }
