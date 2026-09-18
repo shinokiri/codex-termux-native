@@ -110,8 +110,7 @@ fn publication_skips_live_writers_and_keeps_coordination_locked() {
         Err(fs::TryLockError::WouldBlock)
     ));
     drop(publication);
-    codex_utils_file_lock::try_lock(&coordination)
-        .expect("publication releases coordination");
+    codex_utils_file_lock::try_lock(&coordination).expect("publication releases coordination");
     drop(coordination);
     // An existing but unlocked file is also idle; file existence is not ownership.
     fs::File::create(writer.directory.join(format!("{thread_id}.lock"))).unwrap();
