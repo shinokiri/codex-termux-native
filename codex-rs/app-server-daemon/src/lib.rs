@@ -344,6 +344,13 @@ impl Daemon {
                     backend::pid_update_loop_backend(self.backend_paths(&settings))
                         .stop_with_grace(settings.shutdown_grace_seconds)
                         .await?;
+                    match tokio::fs::remove_file(self.manual_update_socket_path()).await {
+                        Ok(()) => {}
+                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(err) => {
+                            return Err(err).context("failed to remove stopped updater socket");
+                        }
+                    }
                 }
                 let output = self.stop().await?;
                 if let Err(err) = thread_recovery::discard_pending(self) {

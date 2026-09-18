@@ -323,6 +323,13 @@ fn termux_stop_also_stops_updater_without_disabling_future_starts() -> Result<()
             .join("app-server-daemon/app-server-updater.pid")
             .exists()
     );
+    assert!(
+        !daemon
+            .home
+            .path()
+            .join("app-server-daemon/app-server-updater.sock")
+            .exists()
+    );
     assert_eq!(daemon.lifecycle("stop")?["status"], "notRunning");
     assert_eq!(daemon.lifecycle("start")?["status"], "started");
     assert_ne!(daemon.pid("app-server-updater.pid")?, updater_pid);
