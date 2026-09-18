@@ -61,6 +61,8 @@ jobs:
           just test "${test_args[@]}" -E 'test(update_prompt::tests::)'
       - name: Test the update command entry point
         run: just test --locked -p codex-cli --test update
+      - name: Test daemon lifecycle and Termux package updater startup
+        run: just test --locked -p codex-cli --test app_server_daemon
       - name: Check update-channel helpers with Clippy
         run: just fix -p codex-install-context -p codex-app-server-daemon --locked --lib
       - name: Check generated changes

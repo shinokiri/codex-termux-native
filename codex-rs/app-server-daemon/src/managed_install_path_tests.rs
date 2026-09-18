@@ -80,3 +80,39 @@ async fn older_managed_binary_does_not_claim_updater_support() {
     std::fs::write(&binary, b"#!/bin/sh\nexit 0\n").expect("newer binary");
     assert!(super::supports_daemon_update_loop(&binary).await);
 }
+
+#[cfg(unix)]
+#[test]
+fn termux_updater_requires_a_stable_revision_and_current_latest_selection() {
+    for (name, eligible) in [
+        ("0.155.0+termux.9-aarch64-linux-android", true),
+        ("0.155.0-aarch64-linux-android", false),
+        ("0.155.0-alpha.1+termux.9-aarch64-linux-android", false),
+        ("0.155.0+termux.0-aarch64-linux-android", false),
+        ("0.155.0+termux.gabcdef-aarch64-linux-android", false),
+        ("0.155.0+termux.9.extra-aarch64-linux-android", false),
+        ("0.155.0+termux.+9-aarch64-linux-android", false),
+        ("0.155.0+termux.9-x86_64-unknown-linux-musl", false),
+    ] {
+        let home = tempfile::TempDir::new().expect("home");
+        let standalone = home.path().join("packages/standalone");
+        let release = standalone.join("releases").join(name);
+        let managed = release.join("bin/codex");
+        std::fs::create_dir_all(managed.parent().expect("bin parent")).expect("release");
+        std::fs::write(&managed, b"termux").expect("managed binary");
+        std::os::unix::fs::symlink(&release, standalone.join("current")).expect("current");
+        let marker = standalone.join("auto-update-version");
+        std::fs::write(&marker, name).expect("latest selection");
+        assert_eq!(
+            super::is_stable_standalone_release(home.path(), &managed),
+            eligible,
+            "release {name}"
+        );
+        if eligible {
+            std::fs::write(&marker, "stale selection").expect("stale marker");
+            assert!(!super::is_stable_standalone_release(home.path(), &managed));
+            std::fs::remove_file(&marker).expect("pin release");
+            assert!(!super::is_stable_standalone_release(home.path(), &managed));
+        }
+    }
+}

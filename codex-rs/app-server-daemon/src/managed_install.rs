@@ -55,12 +55,26 @@ pub(crate) fn is_stable_standalone_release(codex_home: &Path, codex_bin: &Path) 
         "x86_64-unknown-linux-musl",
         "aarch64-pc-windows-msvc",
         "x86_64-pc-windows-msvc",
+        "aarch64-linux-android",
     ];
     let Some(version) = targets
         .iter()
         .find_map(|target| release_name.strip_suffix(&format!("-{target}")))
     else {
         return false;
+    };
+    let version = if release_name.ends_with("-aarch64-linux-android") {
+        let Some((version, revision)) = version.split_once("+termux.") else {
+            return false;
+        };
+        if !revision.bytes().all(|byte| byte.is_ascii_digit())
+            || !revision.parse::<u64>().is_ok_and(|revision| revision > 0)
+        {
+            return false;
+        }
+        version
+    } else {
+        version
     };
     let components: Vec<_> = version.split('.').collect();
     components.len() == 3
