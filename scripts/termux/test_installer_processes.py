@@ -105,7 +105,7 @@ int main(int argc, char **argv) {
                 result = self.prune(root)
                 self.assertIn(f"in use by PID {process.pid}", result.stdout)
                 self.assertTrue((old / "bin/codex-code-mode-host").is_file())
-                self.assertFalse(unused.exists())
+                self.assertFalse(unused.exists(), result.stdout + result.stderr)
                 self.assertIsNone(process.poll())
                 process.terminate()
                 process.wait(timeout=5)
@@ -191,7 +191,7 @@ int main(int argc, char **argv) {
                 self.assertTrue(old.exists())
 
     def test_uninspectable_processes_keep_packages(self):
-        for failure in ("ps", "exe", "cwd", "maps"):
+        for failure in ("ps", "missing_installer", "exe", "cwd", "maps"):
             with (
                 self.subTest(failure=failure),
                 tempfile.TemporaryDirectory() as temporary,
@@ -201,6 +201,10 @@ int main(int argc, char **argv) {
                 self.install(root, 2)
                 if failure == "ps":
                     write_executable(root / "bin/ps", "#!/bin/sh\nexit 1\n")
+                elif failure == "missing_installer":
+                    write_executable(
+                        root / "bin/ps", f"#!/bin/sh\nprintf '{os.getpid()}\\n'\n"
+                    )
                 elif failure in ("exe", "cwd"):
                     command = shlex.quote(shutil.which("readlink"))
                     write_executable(

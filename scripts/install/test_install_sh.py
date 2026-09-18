@@ -3,6 +3,8 @@
 import hashlib
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 import subprocess
 import tarfile
@@ -751,6 +753,26 @@ def run_installer_in(
         "  -m) printf 'arm64\\n' ;;\n"
         "esac\n",
     )
+    if platform == "android" and not (bin_dir / "ps").exists():
+        # Model the app's isolated UID with this test runner's real process tree.
+        # Unrelated CI control processes may have unreadable /proc entries.
+        real_ps = shutil.which("ps")
+        write_executable(
+            bin_dir / "ps",
+            f"#!{sys.executable}\n"
+            "import os, subprocess, sys\n"
+            f"real_ps = {real_ps!r}\n"
+            "if sys.argv[1:] != ['-u', str(os.getuid()), '-o', 'pid=']:\n"
+            "    os.execv(real_ps, [real_ps, *sys.argv[1:]])\n"
+            "rows = subprocess.check_output([real_ps, '-u', str(os.getuid()), '-o', 'pid=', '-o', 'ppid='], text=True).splitlines()\n"
+            "parents = dict(tuple(map(int, row.split())) for row in rows)\n"
+            f"owned = {{{os.getpid()}}}\n"
+            "while True:\n"
+            "    found = {pid for pid, parent in parents.items() if parent in owned} - owned\n"
+            "    if not found: break\n"
+            "    owned.update(found)\n"
+            "print('\\n'.join(map(str, sorted(owned))))\n",
+        )
     if old_updater_parent_pid is not None:
         fake_ps = bin_dir / "ps"
         fake_ps.write_text(
