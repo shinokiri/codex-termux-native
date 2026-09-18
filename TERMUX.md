@@ -7,13 +7,13 @@ independently. No third-party Codex fork patches or release binaries are used.
 ## Version identity and upstream updates
 
 Runtime version fields match the exact official Cargo version. A build of
-`rust-v0.153.4` reports `0.153.4` in the CLI, TUI, package manifest and client
+`rust-v0.155.0` reports `0.155.0` in the CLI, TUI, package manifest and client
 build information. The existing `STABLE_GIT_COMMIT` stamp identifies the official
 upstream commit. Development main keeps its upstream `0.0.0` placeholder.
 
 The actual fork source commit, dirty state and packaging revision remain in
 `BUILD-INFO.json`. Release tags and installation directories use an internal key
-such as `0.153.4+termux.2` so an adaptation fix can update the same official
+such as `0.155.0+termux.8` so an adaptation fix can update the same official
 version. The updater reads that key from the local build metadata; it is not
 used as the runtime version. Existing installations with the older version
 suffix can upgrade normally.
@@ -93,6 +93,29 @@ installer, and checks both success and failure without downloading an update.
 The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
+
+## Upstream 0.155.0 integration
+
+The source baseline is official `rust-v0.155.0`. Android writer locking now lives
+in `codex-rollout`, including the new publication probe; both writer ownership
+and publication coordination use the same Android `flock` adapter. Native CI
+runs the relocated writer-lock regressions before publication.
+
+The shell snapshot PATH adaptation now applies to the new capture module. Its
+regression uses the new snapshot decoder and still checks a prefix containing
+spaces, shadowing shell functions and NUL-delimited multiline values. The daemon
+keeps the upstream configurable update schedule, guarded installation and process
+group shutdown while using the Termux release channel and shell.
+
+WebSocket recovery, telemetry defaults and TUI idle polling changes remain in the
+release source. The Android ten-second idle disconnect is removed: the Responses
+transport now matches upstream, preserving connection reuse across long tool waits.
+Recovery uses the upstream transport reset method so the new
+authentication-owner generation is preserved.
+The official account-switch invalidation remains active: same-account recovery
+retains turn routing, while a changed account discards the previous routing and
+incremental response state. Integration tests exercise both recovery cases.
+V8 remains pinned to 150.4.0.
 
 ## Client update experience
 
@@ -186,7 +209,7 @@ rebuilding Android or V8. All three published asset digests matched the artifact
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
-| File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
+| File locks | Android `flock`, standard library elsewhere; including rollout writer and publication locks | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
 | OpenSSL | Android-only vendored build feature; Android CLI and network-probe linking passed | Device handshakes; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
@@ -196,8 +219,7 @@ rebuilding Android or V8. All three published asset digests matched the artifact
 | Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
 | Process sandbox | Upstream has no Android process-sandbox backend | Permission and approval behavior on device; executor requests that require a sandbox are unsupported |
 
-The experimental `shell_snapshot_v2` feature is disabled by default in this
-upstream revision. Its environment capture now finds `env` through `PATH`,
+The upstream shell snapshot capture finds `env` through `PATH`,
 supporting Termux's prefix while bypassing same-named shell functions. A shell
 regression covers a prefix containing spaces and NUL-delimited multiline values.
 
@@ -390,17 +412,29 @@ This does not test the interactive UI, MCP servers, account login or session
 resume, and does not install the package or alter conversation archives.
 
 
-Mobile idle networking: an Android Responses WebSocket is released after ten seconds with no active model request. Requests that are still generating continue to handle heartbeats normally, and nearby tool requests can reuse the connection. The next request reconnects after an idle release. The timeout uses both monotonic elapsed time and wall time; a resume packet cannot renew the idle period after suspend. No wakeup alarm is added. The built-in Statsig metrics exporter is disabled on Android to avoid periodic background uploads; explicitly configured OTLP exporters remain available.
+Android uses the upstream Responses WebSocket transport, including connection
+reuse and heartbeat handling between model requests. Version 0.155.0 removes the
+previous ten-second idle disconnect. Traffic observations confirmed that the
+old policy reduced idle communication, but did not establish its net battery
+benefit. Long tool waits caused a new handshake and full request after expiry;
+restoring upstream reuse avoids that cost and reduces transport maintenance.
+Persistent idle connections may receive heartbeats again. This is a transport
+tradeoff, not a measured battery-life improvement.
+
+The built-in Statsig metrics exporter remains disabled on Android to avoid
+periodic background uploads; explicitly configured OTLP exporters remain
+available. This changes diagnostic reporting, not model request processing.
 
 
 Android also uses startup, explicit status queries, inference notifications and
 recovery events to refresh account usage instead of polling while idle. Analytics
 event uploads default to off on Android and continue to honor an explicit choice.
 
-Packaging revision 8 integrates these deployed mobile changes and Responses
-WebSocket recovery into the release source. Release builds require the CLI,
-native, WebSocket recovery, mobile transport and mobile UI regressions against
-the same prepared commit. The dedicated recovery test selection fails when the
-recovery scenarios are absent. The ten-second mobile idle timeout preserves the
-deployed behavior; it is not a measured optimum for every workload, and long tool
-waits incur a new connection and full request after expiry.
+Quota displays may remain stale while idle; startup, explicit status queries,
+inference notifications and recovery events still refresh usage. Analytics can
+be explicitly enabled when diagnostic event reporting is wanted.
+
+Release builds require CLI, native compatibility, WebSocket recovery, transport,
+telemetry and mobile UI regressions against the same prepared commit. The
+recovery test selection fails when the recovery scenarios are absent. Android
+package validation also checks connection reuse through a long tool wait.
