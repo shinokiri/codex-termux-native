@@ -44,22 +44,20 @@ async fn websocket_cooldown_preserves_routing_only_for_the_same_account(account_
         ],
     )
     .await;
-    let server = start_websocket_server(vec![
-        (2..=3)
-            .map(|index| {
-                let id = format!("resp-{index}");
-                vec![
-                    ev_response_created(&id),
-                    json!({
-                        "type": "response.metadata",
-                        "headers": {"x-codex-turn-state": "resumed-state"},
-                    }),
-                    ev_completed(&id),
-                ]
-            })
-            .collect(),
-    ])
-    .await;
+    let recovery_responses = (2..=3)
+        .map(|index| {
+            let id = format!("resp-{index}");
+            vec![
+                ev_response_created(&id),
+                json!({
+                    "type": "response.metadata",
+                    "headers": {"x-codex-turn-state": "resumed-state"},
+                }),
+                ev_completed(&id),
+            ]
+        })
+        .collect();
+    let server = start_websocket_server(vec![recovery_responses]).await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
     let destination = Arc::new(Mutex::new(http_server.address().to_string()));
@@ -93,11 +91,7 @@ async fn websocket_cooldown_preserves_routing_only_for_the_same_account(account_
     .await;
     assert_eq!(http_responses.requests().len(), 1);
     assert!(server.handshakes().is_empty());
-    *destination.lock().unwrap() = server
-        .uri()
-        .strip_prefix("ws://")
-        .unwrap()
-        .to_string();
+    *destination.lock().unwrap() = server.uri().strip_prefix("ws://").unwrap().to_string();
 
     if account_id == "second-account" {
         let mut tokens = harness
