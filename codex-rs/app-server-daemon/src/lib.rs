@@ -336,6 +336,15 @@ impl Daemon {
             }
             LifecycleCommand::Stop => {
                 let _operation_lock = self.acquire_operation_lock().await?;
+                // Termux needs an explicit way to stop all of its managed background work.
+                // Keep the preference so the next managed start can recreate the updater.
+                #[cfg(target_os = "android")]
+                {
+                    let settings = DaemonSettings::load_for_stop(&self.settings_file).await;
+                    backend::pid_update_loop_backend(self.backend_paths(&settings))
+                        .stop_with_grace(settings.shutdown_grace_seconds)
+                        .await?;
+                }
                 let output = self.stop().await?;
                 if let Err(err) = thread_recovery::discard_pending(self) {
                     eprintln!("warning: failed to clear saved threads after daemon stop: {err}");

@@ -103,10 +103,10 @@ runs the relocated writer-lock regressions before publication.
 
 The shell snapshot PATH adaptation now applies to the new capture module. Its
 regression uses the new snapshot decoder and still checks a prefix containing
-spaces, shadowing shell functions and NUL-delimited multiline values. The upstream
-daemon update scheduler and guarded installer code remain present, with the
-installer URL and shell adapted for Termux. Android package eligibility is still
-unsupported by that scheduler; see the manual update behavior below.
+spaces, shadowing shell functions and NUL-delimited multiline values. The daemon
+retains the upstream update scheduler, guarded installer and updater replacement.
+Packaging revision 9 also recognizes stable Android packages with numeric Termux
+revisions, so latest-channel managed installs can start their updater.
 
 WebSocket recovery, telemetry defaults and TUI idle polling changes remain in the
 release source. The Android ten-second idle disconnect is removed: the Responses
@@ -120,13 +120,28 @@ V8 remains pinned to 150.4.0.
 
 ## Client update experience
 
-Updates on this Android fork currently use `codex update`. The daemon's
-standalone eligibility check still accepts only desktop targets and plain
-three-part versions, so it does not start a background updater for Android
-packages; `codex app-server daemon update` is also unsupported for these packages.
-The dormant daemon installer path is adapted to the Termux release channel and
-shell, but that alone does not enable automatic updates. This distinction does
-not affect the running app-server daemon or the manual update command.
+Starting with packaging revision 9, a managed start (including `codex agents`)
+ensures one background updater for a stable latest-channel Android package.
+It checks after five minutes, then hourly by default, using the Termux release
+channel and `sh` from Termux's `PATH`. Pinned releases, development packages and
+prereleases remain excluded. `codex update` remains available, and
+`codex app-server daemon update` requests an immediate managed update.
+
+The upstream updater can restart a running app-server after an executable change;
+clients may briefly reconnect, with the upstream thread recovery flow retained.
+Configure it in `$CODEX_HOME/app-server-daemon/settings.json` (by default under
+`~/.codex`), preserving any other existing fields:
+
+```json
+{"updater":{"autoUpdateEnabled":true,"updateIntervalMinutes":60}}
+```
+
+On Termux, `codex app-server daemon stop` stops both the app-server and its updater.
+It preserves the automatic-update preference; the next managed start recreates
+one updater when enabled. This does not install a boot service or enable remote
+control. After reboot, launching `codex agents` or starting the daemon restores it.
+Earlier packages adapted the updater's URL and shell but did not recognize
+Android install names, so their background updater never started.
 
 Android builds check this repository's completed releases, display the existing
 update prompt, and run the native installer through `codex update`. The version
