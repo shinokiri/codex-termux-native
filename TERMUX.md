@@ -103,9 +103,10 @@ runs the relocated writer-lock regressions before publication.
 
 The shell snapshot PATH adaptation now applies to the new capture module. Its
 regression uses the new snapshot decoder and still checks a prefix containing
-spaces, shadowing shell functions and NUL-delimited multiline values. The daemon
-keeps the upstream configurable update schedule, guarded installation and process
-group shutdown while using the Termux release channel and shell.
+spaces, shadowing shell functions and NUL-delimited multiline values. The upstream
+daemon update scheduler and guarded installer code remain present, with the
+installer URL and shell adapted for Termux. Android package eligibility is still
+unsupported by that scheduler; see the manual update behavior below.
 
 WebSocket recovery, telemetry defaults and TUI idle polling changes remain in the
 release source. The Android ten-second idle disconnect is removed: the Responses
@@ -119,9 +120,13 @@ V8 remains pinned to 150.4.0.
 
 ## Client update experience
 
-The Android daemon updater uses the same native release channel as `codex update`
-and resolves `sh` through Termux's `PATH`. Its installer is non-interactive.
-This does not change PID detection or enable remote control automatically.
+Updates on this Android fork currently use `codex update`. The daemon's
+standalone eligibility check still accepts only desktop targets and plain
+three-part versions, so it does not start a background updater for Android
+packages; `codex app-server daemon update` is also unsupported for these packages.
+The dormant daemon installer path is adapted to the Termux release channel and
+shell, but that alone does not enable automatic updates. This distinction does
+not affect the running app-server daemon or the manual update command.
 
 Android builds check this repository's completed releases, display the existing
 update prompt, and run the native installer through `codex update`. The version
