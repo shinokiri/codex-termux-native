@@ -1971,7 +1971,7 @@ impl ModelClientSession {
         match wire_api {
             WireApi::Responses => {
                 if self.client.state.websocket_fallback.try_expire() {
-                    self.websocket_session = WebsocketSession::default();
+                    self.reset_websocket_session();
                     warn!("retrying WebSockets after HTTP fallback cooldown");
                 }
                 if self.client.responses_websocket_enabled() {
@@ -2027,7 +2027,7 @@ impl ModelClientSession {
         let activated = self
             .client
             .force_http_fallback(session_telemetry, model_info);
-        self.websocket_session = WebsocketSession::default();
+        self.reset_websocket_session();
         activated
     }
 }
