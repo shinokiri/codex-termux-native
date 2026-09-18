@@ -22,24 +22,27 @@ struct TestDaemon {
 
 impl TestDaemon {
     fn new() -> Result<Self> {
-        let home = tempfile::Builder::new().tempdir_in("/tmp")?;
-        let codex = codex_utils_cargo_bin::cargo_bin("codex")?;
-        let codex_source = std::fs::canonicalize(&codex)?;
         let target = if cfg!(target_os = "macos") {
             format!("{}-apple-darwin", std::env::consts::ARCH)
         } else {
             format!("{}-unknown-linux-musl", std::env::consts::ARCH)
         };
+        Self::with_release(&format!("0.0.0-{target}"))
+    }
+
+    fn with_release(release_name: &str) -> Result<Self> {
+        let home = tempfile::Builder::new().tempdir_in("/tmp")?;
+        let codex = codex_utils_cargo_bin::cargo_bin("codex")?;
+        let codex_source = std::fs::canonicalize(&codex)?;
         let standalone = home.path().join("packages/standalone");
-        let release_name = format!("0.0.0-{target}");
         let managed = standalone
             .join("releases")
-            .join(&release_name)
+            .join(release_name)
             .join("bin/codex");
         std::fs::create_dir_all(managed.parent().context("managed bin parent")?)?;
         std::fs::hard_link(&codex_source, &managed)
             .or_else(|_| std::fs::copy(&codex_source, managed).map(|_| ()))?;
-        std::fs::write(standalone.join("auto-update-version"), &release_name)?;
+        std::fs::write(standalone.join("auto-update-version"), release_name)?;
         std::os::unix::fs::symlink(
             PathBuf::from("releases").join(release_name),
             standalone.join("current"),
@@ -278,5 +281,50 @@ fn manual_update_rejects_an_unowned_installation() -> Result<()> {
     assert_eq!(daemon.lifecycle("update")?["status"], "unsupported");
     assert!(daemon.pid("app-server.pid").is_err());
     assert!(daemon.pid("app-server-updater.pid").is_err());
+    Ok(())
+}
+
+#[test]
+fn termux_package_starts_one_updater_and_respects_disable() -> Result<()> {
+    let daemon = TestDaemon::with_release("0.155.0+termux.9-aarch64-linux-android")?;
+    assert_eq!(daemon.lifecycle("start")?["status"], "started");
+    let updater_pid = daemon.pid("app-server-updater.pid")?;
+    assert_eq!(daemon.lifecycle("start")?["status"], "alreadyRunning");
+    assert_eq!(daemon.pid("app-server-updater.pid")?, updater_pid);
+
+    std::fs::write(
+        daemon.home.path().join("app-server-daemon/settings.json"),
+        r#"{"updater":{"autoUpdateEnabled":false}}"#,
+    )?;
+    assert_eq!(daemon.lifecycle("restart")?["status"], "restarted");
+    wait_for_exit(updater_pid)?;
+    assert!(
+        !daemon
+            .home
+            .path()
+            .join("app-server-daemon/app-server-updater.pid")
+            .exists()
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[test]
+fn termux_stop_also_stops_updater_without_disabling_future_starts() -> Result<()> {
+    let daemon = TestDaemon::with_release("0.155.0+termux.9-aarch64-linux-android")?;
+    assert_eq!(daemon.lifecycle("start")?["status"], "started");
+    let updater_pid = daemon.pid("app-server-updater.pid")?;
+    assert_eq!(daemon.lifecycle("stop")?["status"], "stopped");
+    wait_for_exit(updater_pid)?;
+    assert!(
+        !daemon
+            .home
+            .path()
+            .join("app-server-daemon/app-server-updater.pid")
+            .exists()
+    );
+    assert_eq!(daemon.lifecycle("stop")?["status"], "notRunning");
+    assert_eq!(daemon.lifecycle("start")?["status"], "started");
+    assert_ne!(daemon.pid("app-server-updater.pid")?, updater_pid);
     Ok(())
 }
