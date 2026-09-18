@@ -107,9 +107,11 @@ spaces, shadowing shell functions and NUL-delimited multiline values. The daemon
 keeps the upstream configurable update schedule, guarded installation and process
 group shutdown while using the Termux release channel and shell.
 
-The existing WebSocket recovery, Android idle expiry, telemetry defaults and TUI
-idle polling changes remain in the release source. Recovery uses the upstream
-transport reset method so the new authentication-owner generation is preserved.
+WebSocket recovery, telemetry defaults and TUI idle polling changes remain in the
+release source. The Android ten-second idle disconnect is removed: the Responses
+transport now matches upstream, preserving connection reuse across long tool waits.
+Recovery uses the upstream transport reset method so the new
+authentication-owner generation is preserved.
 The official account-switch invalidation remains active: same-account recovery
 retains turn routing, while a changed account discards the previous routing and
 incremental response state. Integration tests exercise both recovery cases.
@@ -410,17 +412,29 @@ This does not test the interactive UI, MCP servers, account login or session
 resume, and does not install the package or alter conversation archives.
 
 
-Mobile idle networking: an Android Responses WebSocket is released after ten seconds with no active model request. Requests that are still generating continue to handle heartbeats normally, and nearby tool requests can reuse the connection. The next request reconnects after an idle release. The timeout uses both monotonic elapsed time and wall time; a resume packet cannot renew the idle period after suspend. No wakeup alarm is added. The built-in Statsig metrics exporter is disabled on Android to avoid periodic background uploads; explicitly configured OTLP exporters remain available.
+Android uses the upstream Responses WebSocket transport, including connection
+reuse and heartbeat handling between model requests. Version 0.155.0 removes the
+previous ten-second idle disconnect. Traffic observations confirmed that the
+old policy reduced idle communication, but did not establish its net battery
+benefit. Long tool waits caused a new handshake and full request after expiry;
+restoring upstream reuse avoids that cost and reduces transport maintenance.
+Persistent idle connections may receive heartbeats again. This is a transport
+tradeoff, not a measured battery-life improvement.
+
+The built-in Statsig metrics exporter remains disabled on Android to avoid
+periodic background uploads; explicitly configured OTLP exporters remain
+available. This changes diagnostic reporting, not model request processing.
 
 
 Android also uses startup, explicit status queries, inference notifications and
 recovery events to refresh account usage instead of polling while idle. Analytics
 event uploads default to off on Android and continue to honor an explicit choice.
 
-Packaging revision 8 integrates these deployed mobile changes and Responses
-WebSocket recovery into the release source. Release builds require the CLI,
-native, WebSocket recovery, mobile transport and mobile UI regressions against
-the same prepared commit. The dedicated recovery test selection fails when the
-recovery scenarios are absent. The ten-second mobile idle timeout preserves the
-deployed behavior; it is not a measured optimum for every workload, and long tool
-waits incur a new connection and full request after expiry.
+Quota displays may remain stale while idle; startup, explicit status queries,
+inference notifications and recovery events still refresh usage. Analytics can
+be explicitly enabled when diagnostic event reporting is wanted.
+
+Release builds require CLI, native compatibility, WebSocket recovery, transport,
+telemetry and mobile UI regressions against the same prepared commit. The
+recovery test selection fails when the recovery scenarios are absent. Android
+package validation also checks connection reuse through a long tool wait.
