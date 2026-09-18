@@ -3,6 +3,8 @@
 import hashlib
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 import subprocess
 import tarfile
@@ -739,22 +741,38 @@ def run_installer_in(
         encoding="utf-8",
     )
     fake_curl.chmod(0o755)
-    if force_macos or platform == "android":
-        fake_uname = bin_dir / "uname"
-        fake_uname.write_text(
-            "#!/bin/sh\n"
-            'case "$1" in\n'
-            + (
-                "  -s) printf 'Linux\\n' ;;\n"
-                if platform == "android"
-                else "  -s) printf 'Darwin\\n' ;;\n"
-            )
-            + ("  -o) printf 'Android\\n' ;;\n" if platform == "android" else "")
-            + "  -m) printf 'arm64\\n' ;;\n"
-            "esac\n",
-            encoding="utf-8",
+    # Keep platform fixtures independent of the host, including Termux.
+    system = "Darwin" if force_macos else "Linux"
+    operating_system = "Android" if platform == "android" else "GNU/Linux"
+    write_executable(
+        bin_dir / "uname",
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        f"  -s) printf '{system}\\n' ;;\n"
+        f"  -o) printf '{operating_system}\\n' ;;\n"
+        "  -m) printf 'arm64\\n' ;;\n"
+        "esac\n",
+    )
+    if platform == "android" and not (bin_dir / "ps").exists():
+        # Model the app's isolated UID with this test runner's real process tree.
+        # Unrelated CI control processes may have unreadable /proc entries.
+        real_ps = shutil.which("ps")
+        write_executable(
+            bin_dir / "ps",
+            f"#!{sys.executable}\n"
+            "import os, subprocess, sys\n"
+            f"real_ps = {real_ps!r}\n"
+            "if sys.argv[1:] != ['-u', str(os.getuid()), '-o', 'pid=']:\n"
+            "    os.execv(real_ps, [real_ps, *sys.argv[1:]])\n"
+            "rows = subprocess.check_output([real_ps, '-u', str(os.getuid()), '-o', 'pid=', '-o', 'ppid='], text=True).splitlines()\n"
+            "parents = dict(tuple(map(int, row.split())) for row in rows)\n"
+            f"owned = {{{os.getpid()}}}\n"
+            "while True:\n"
+            "    found = {pid for pid, parent in parents.items() if parent in owned} - owned\n"
+            "    if not found: break\n"
+            "    owned.update(found)\n"
+            "print('\\n'.join(map(str, sorted(owned))))\n",
         )
-        fake_uname.chmod(0o755)
     if old_updater_parent_pid is not None:
         fake_ps = bin_dir / "ps"
         fake_ps.write_text(
@@ -798,7 +816,7 @@ def run_installer_in(
             "CODEX_TEST_RELEASES_MODE": releases_mode,
             "CODEX_TEST_REQUEST_LOG": str(request_log),
             "HOME": str(home),
-            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "PATH": f"{bin_dir}:{os.environ.get('PATH', os.defpath)}",
             "SHELL": "/bin/sh",
         }
     )

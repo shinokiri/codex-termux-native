@@ -13,7 +13,7 @@ upstream commit. Development main keeps its upstream `0.0.0` placeholder.
 
 The actual fork source commit, dirty state and packaging revision remain in
 `BUILD-INFO.json`. Release tags and installation directories use an internal key
-such as `0.155.0+termux.8` so an adaptation fix can update the same official
+such as `0.155.0+termux.9` so an adaptation fix can update the same official
 version. The updater reads that key from the local build metadata; it is not
 used as the runtime version. Existing installations with the older version
 suffix can upgrade normally.
@@ -103,9 +103,10 @@ runs the relocated writer-lock regressions before publication.
 
 The shell snapshot PATH adaptation now applies to the new capture module. Its
 regression uses the new snapshot decoder and still checks a prefix containing
-spaces, shadowing shell functions and NUL-delimited multiline values. The daemon
-keeps the upstream configurable update schedule, guarded installation and process
-group shutdown while using the Termux release channel and shell.
+spaces, shadowing shell functions and NUL-delimited multiline values. The upstream
+daemon update scheduler and guarded installer code remain present, with the
+installer URL and shell adapted for Termux. Android package eligibility is still
+unsupported by that scheduler; see the manual update behavior below.
 
 WebSocket recovery, telemetry defaults and TUI idle polling changes remain in the
 release source. The Android ten-second idle disconnect is removed: the Responses
@@ -119,9 +120,13 @@ V8 remains pinned to 150.4.0.
 
 ## Client update experience
 
-The Android daemon updater uses the same native release channel as `codex update`
-and resolves `sh` through Termux's `PATH`. Its installer is non-interactive.
-This does not change PID detection or enable remote control automatically.
+Updates on this Android fork currently use `codex update`. The daemon's
+standalone eligibility check still accepts only desktop targets and plain
+three-part versions, so it does not start a background updater for Android
+packages; `codex app-server daemon update` is also unsupported for these packages.
+The dormant daemon installer path is adapted to the Termux release channel and
+shell, but that alone does not enable automatic updates. This distinction does
+not affect the running app-server daemon or the manual update command.
 
 Android builds check this repository's completed releases, display the existing
 update prompt, and run the native installer through `codex update`. The version
@@ -152,18 +157,30 @@ codex update
 Older manually unpacked candidates need that initial installation once. The
 installer prints any required PATH setup instructions.
 
-To update and reclaim old installed packages in one command, close all other
-Codex sessions first and run:
+To update and reclaim unused old installed packages in one command, run:
 
 ```sh
 codex update --prune
 ```
 
 The installer switches `current` and verifies the new executable before pruning,
-while still holding the existing installer lock. It keeps only `current`, with
-no rollback version. If the latest release is already installed, it still
-performs cleanup without downloading the package again. A failed installation
-or executable verification does not run pruning.
+while still holding the existing installer lock. It keeps `current` and packages
+still used by running processes. An old daemon or session may need its matching
+code-mode host even after the visible command has been updated. If the latest
+release is already installed, cleanup runs without downloading the package again.
+A failed installation or executable verification does not run pruning.
+
+For complete cleanup, finish tasks and exit all other Codex sessions, then run:
+
+```sh
+codex app-server daemon stop
+codex update --prune
+```
+
+Leaving the Agents screen with Escape does not stop its daemon. A task marked
+Finished does not mean that the daemon has exited. An ordinary `codex` or
+`codex resume` session can also reuse an existing daemon. Restart Codex normally
+after updating; `codex agents` starts the daemon when needed.
 
 If your installed CLI predates `codex update --prune`, use the current installer
 once to update and clean up:
@@ -181,14 +198,20 @@ codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/re
   printf '%s\n' "$codex_installer" | sh -s -- --prune
 ```
 
-`--prune` keeps only the package selected by `current`, with no rollback version.
-It removes older package and legacy platform-npm installs, along with temporary
-files left by interrupted installations. It validates `current` before cleanup
-and leaves unrecognized directories alone. It uses the existing installer lock
-and does not download a version, change PATH, or remove sessions, authentication
-or configuration. Normal installation and `codex update` without `--prune`
-retain older packages, because an already-running CLI may still need its
-matching code-mode host. Do not launch another Codex process during cleanup.
+`--prune` removes unused older package and legacy platform-npm installs, along
+with temporary files left by interrupted installations. It validates `current`
+before cleanup and leaves unrecognized directories alone. Before removing an old
+package, it checks the user's processes for executables, working directories,
+and mapped files inside that package. A package is retained if it is in use or
+process inspection is incomplete. Only the CLI ancestor performing this update
+is exempt; running sessions, daemons, helpers, and unrelated update processes
+remain protected. After these processes exit, rerun cleanup to remove the package.
+
+This protection is included starting with packaging revision 9. Pruning does not
+reserve an extra rollback version. It uses the existing installer lock and does
+not download a version, change PATH, or remove sessions, authentication or
+configuration. Normal installation and `codex update` without `--prune` retain
+older packages. Do not manually launch a binary from an old package during cleanup.
 
 ## Status
 
