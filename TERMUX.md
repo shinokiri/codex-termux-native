@@ -7,13 +7,13 @@ independently. No third-party Codex fork patches or release binaries are used.
 ## Version identity and upstream updates
 
 Runtime version fields match the exact official Cargo version. A build of
-`rust-v0.153.4` reports `0.153.4` in the CLI, TUI, package manifest and client
+`rust-v0.155.0` reports `0.155.0` in the CLI, TUI, package manifest and client
 build information. The existing `STABLE_GIT_COMMIT` stamp identifies the official
 upstream commit. Development main keeps its upstream `0.0.0` placeholder.
 
 The actual fork source commit, dirty state and packaging revision remain in
 `BUILD-INFO.json`. Release tags and installation directories use an internal key
-such as `0.153.4+termux.2` so an adaptation fix can update the same official
+such as `0.155.0+termux.8` so an adaptation fix can update the same official
 version. The updater reads that key from the local build metadata; it is not
 used as the runtime version. Existing installations with the older version
 suffix can upgrade normally.
@@ -93,6 +93,22 @@ installer, and checks both success and failure without downloading an update.
 The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
+
+## Upstream 0.155.0 integration
+
+The source baseline is official `rust-v0.155.0`. Android writer locking now lives
+in `codex-rollout`, including the new publication probe; both writer ownership
+and publication coordination use the same Android `flock` adapter. Native CI
+runs the relocated writer-lock regressions before publication.
+
+The shell snapshot PATH adaptation now applies to the new capture module. Its
+regression uses the new snapshot decoder and still checks a prefix containing
+spaces, shadowing shell functions and NUL-delimited multiline values. The daemon
+keeps the upstream configurable update schedule, guarded installation and process
+group shutdown while using the Termux release channel and shell.
+
+The existing WebSocket recovery, Android idle expiry, telemetry defaults and TUI
+idle polling changes remain in the release source. V8 remains pinned to 150.4.0.
 
 ## Client update experience
 
@@ -186,7 +202,7 @@ rebuilding Android or V8. All three published asset digests matched the artifact
 
 | Area | Implementation | Validation still required |
 | --- | --- | --- |
-| File locks | Android `flock`, standard library elsewhere; 20 migrated call sites | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
+| File locks | Android `flock`, standard library elsewhere; including rollout writer and publication locks | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
 | OpenSSL | Android-only vendored build feature; Android CLI and network-probe linking passed | Device handshakes; this does not configure certificate roots |
 | DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
 | TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
@@ -196,8 +212,7 @@ rebuilding Android or V8. All three published asset digests matched the artifact
 | Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
 | Process sandbox | Upstream has no Android process-sandbox backend | Permission and approval behavior on device; executor requests that require a sandbox are unsupported |
 
-The experimental `shell_snapshot_v2` feature is disabled by default in this
-upstream revision. Its environment capture now finds `env` through `PATH`,
+The upstream shell snapshot capture finds `env` through `PATH`,
 supporting Termux's prefix while bypassing same-named shell functions. A shell
 regression covers a prefix containing spaces and NUL-delimited multiline values.
 
