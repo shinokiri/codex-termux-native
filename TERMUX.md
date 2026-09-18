@@ -108,7 +108,12 @@ keeps the upstream configurable update schedule, guarded installation and proces
 group shutdown while using the Termux release channel and shell.
 
 The existing WebSocket recovery, Android idle expiry, telemetry defaults and TUI
-idle polling changes remain in the release source. V8 remains pinned to 150.4.0.
+idle polling changes remain in the release source. Recovery uses the upstream
+transport reset method so the new authentication-owner generation is preserved.
+The official account-switch invalidation remains active: same-account recovery
+retains turn routing, while a changed account discards the previous routing and
+incremental response state. Integration tests exercise both recovery cases.
+V8 remains pinned to 150.4.0.
 
 ## Client update experience
 
