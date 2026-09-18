@@ -1,42 +1,86 @@
 use super::message_item;
 use super::prompt_with_input;
 use super::stream_until_complete_with_model_info;
-use super::websocket_harness_for_codex_backend;
+use super::websocket_harness_with_provider_options_and_auth;
+use codex_login::CodexAuth;
+use codex_model_provider_info::ModelProviderInfo;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_response_sequence;
+use core_test_support::responses::sse;
+use core_test_support::responses::sse_response;
+use core_test_support::responses::start_mock_server;
 use core_test_support::responses::start_websocket_server;
 use core_test_support::skip_if_no_network;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
+use wiremock::Mock;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
 
 #[test_case::test_case("account_id"; "same_account")]
 #[test_case::test_case("second-account"; "changed_account")]
 #[tokio::test]
 async fn websocket_cooldown_preserves_routing_only_for_the_same_account(account_id: &str) {
     skip_if_no_network!();
-    let server = start_websocket_server(
-        [(1..=3, "first-account-state"), (2..=3, "resumed-state")]
-            .into_iter()
-            .map(|(responses, turn_state)| {
-                responses
-                    .map(|index| {
-                        let id = format!("resp-{index}");
-                        vec![
-                            ev_response_created(&id),
-                            json!({
-                                "type": "response.metadata",
-                                "headers": {"x-codex-turn-state": turn_state},
-                            }),
-                            ev_completed(&id),
-                        ]
-                    })
-                    .collect()
-            })
-            .collect(),
+    let http_server = start_mock_server().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(426))
+        .mount(&http_server)
+        .await;
+    let http_responses = mount_response_sequence(
+        &http_server,
+        vec![
+            sse_response(sse(vec![
+                ev_response_created("resp-1"),
+                ev_completed("resp-1"),
+            ]))
+            .insert_header("x-codex-turn-state", "first-account-state"),
+        ],
     )
     .await;
-    let harness = websocket_harness_for_codex_backend(&server).await;
+    let server = start_websocket_server(vec![
+        (2..=3)
+            .map(|index| {
+                let id = format!("resp-{index}");
+                vec![
+                    ev_response_created(&id),
+                    json!({
+                        "type": "response.metadata",
+                        "headers": {"x-codex-turn-state": "resumed-state"},
+                    }),
+                    ev_completed(&id),
+                ]
+            })
+            .collect(),
+    ])
+    .await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let destination = Arc::new(Mutex::new(http_server.address().to_string()));
+    let proxy_destination = Arc::clone(&destination);
+    let proxy = tokio::spawn(async move {
+        while let Ok((mut downstream, _)) = listener.accept().await {
+            let destination = proxy_destination.lock().unwrap().clone();
+            tokio::spawn(async move {
+                let mut upstream = TcpStream::connect(destination).await?;
+                tokio::io::copy_bidirectional(&mut downstream, &mut upstream).await
+            });
+        }
+    });
+    let harness = websocket_harness_with_provider_options_and_auth(
+        ModelProviderInfo::create_openai_provider(Some(base_url)),
+        /*runtime_metrics_enabled*/ false,
+        /*concurrent_reasoning_summaries_enabled*/ false,
+        /*enabled_features*/ &[],
+        Some(CodexAuth::create_dummy_chatgpt_auth_for_testing()),
+    )
+    .await;
     let mut client_session = harness.client.new_session();
     let mut input = vec![message_item("request 1")];
     stream_until_complete_with_model_info(
@@ -47,11 +91,13 @@ async fn websocket_cooldown_preserves_routing_only_for_the_same_account(account_
         "resp-1",
     )
     .await;
-    assert!(
-        harness
-            .client
-            .force_http_fallback(&harness.session_telemetry, &harness.model_info)
-    );
+    assert_eq!(http_responses.requests().len(), 1);
+    assert!(server.handshakes().is_empty());
+    *destination.lock().unwrap() = server
+        .uri()
+        .strip_prefix("ws://")
+        .unwrap()
+        .to_string();
 
     if account_id == "second-account" {
         let mut tokens = harness
@@ -91,9 +137,9 @@ async fn websocket_cooldown_preserves_routing_only_for_the_same_account(account_
         .await;
     }
     let handshakes = server.handshakes();
-    assert_eq!(handshakes.len(), 2);
+    assert_eq!(handshakes.len(), 1);
     assert_eq!(
-        handshakes[1].header("chatgpt-account-id"),
+        handshakes[0].header("chatgpt-account-id"),
         Some(account_id.into())
     );
     let expected_routing = if account_id == "second-account" {
@@ -103,7 +149,7 @@ async fn websocket_cooldown_preserves_routing_only_for_the_same_account(account_
     };
     let connections = server.connections();
     assert_eq!(
-        connections[1]
+        connections[0]
             .iter()
             .map(|request| {
                 let body = request.body_json();
@@ -119,5 +165,7 @@ async fn websocket_cooldown_preserves_routing_only_for_the_same_account(account_
             (json!("resp-2"), 1, expected_routing[1].clone()),
         ],
     );
+    assert_eq!(http_responses.requests().len(), 1);
+    proxy.abort();
     server.shutdown().await;
 }
