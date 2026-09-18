@@ -112,11 +112,11 @@ parse_args() {
         cat <<EOF
 Usage: install.sh [--release VERSION] [--prune-after-install] | --prune
 
-  --prune  Termux only: remove old installed packages, keeping only current.
-           Close all Codex processes first. Does not install or download a release.
+  --prune  Termux only: remove unused old installed packages.
+           Keeps packages used by running processes. Does not download a release.
   --prune-after-install
-           Termux only: install and verify the release, then remove old packages.
-           Close all other Codex sessions first.
+           Termux only: install and verify, then remove unused old packages.
+           Stop old sessions and the daemon to allow complete cleanup.
 
 Environment:
   CODEX_RELEASE          Version to install; overridden by --release.
@@ -781,6 +781,86 @@ cleanup_stale_install_artifacts() {
   fi
 }
 
+is_pruning_updater_ancestor() (
+  # Only the CLI performing this update can finish without its old helpers.
+  # Never exempt its app-server, TUI, or an unrelated update process.
+  prune_candidate_pid="$1"
+  if ! tr '\000' '\n' < "/proc/$prune_candidate_pid/cmdline" | awk '
+    NR == 1 { next }
+    value { value = 0; next }
+    !update {
+      if ($0 == "-c" || $0 == "--config" || $0 == "--enable" || $0 == "--disable") {
+        value = 1; next
+      }
+      if ($0 ~ /^--(config|enable|disable)=/) next
+      if ($0 == "update") { update = 1; next }
+      invalid = 1; exit
+    }
+    $0 == "--prune" && !prune { prune = 1; next }
+    { invalid = 1; exit }
+    END { exit (!update || invalid || value) }
+  '; then
+    return 1
+  fi
+  prune_parent=$$
+  prune_depth=0
+  while [ "$prune_parent" -gt 1 ] && [ "$prune_depth" -lt 128 ]; do
+    [ "$prune_parent" != "$prune_candidate_pid" ] || return 0
+    prune_parent=$(awk '$1 == "PPid:" { print $2; exit }' "/proc/$prune_parent/status" 2>/dev/null) || return 1
+    case "$prune_parent" in '' | *[!0-9]*) return 1 ;; esac
+    prune_depth=$((prune_depth + 1))
+  done
+  return 1
+)
+
+old_release_usage() (
+  # Android exposes our UID's processes. Treat incomplete inspection as busy.
+  prune_release="$1"
+  prune_uid=$(id -u) || return 2
+  prune_pids=$(ps -u "$prune_uid" -o pid= 2>/dev/null) || return 2
+  [ -n "$prune_pids" ] && [ -d /proc/self ] || return 2
+  prune_unknown=false
+  prune_self_seen=false
+  for prune_pid in $prune_pids; do
+    case "$prune_pid" in *[!0-9]*) return 2 ;; esac
+    [ "$prune_pid" != "$$" ] || prune_self_seen=true
+    prune_proc="/proc/$prune_pid"
+    prune_exe=$(readlink "$prune_proc/exe" 2>/dev/null) || {
+      [ -d "$prune_proc" ] || continue
+      prune_state=$(awk '$1 == "State:" { print $2; exit }' "$prune_proc/status" 2>/dev/null) || prune_state=""
+      case "$prune_state" in Z | X) continue ;; esac
+      prune_unknown=true
+      continue
+    }
+    case "$prune_exe" in
+      "$prune_release/bin/codex" | "$prune_release/codex")
+        if is_pruning_updater_ancestor "$prune_pid"; then continue; fi
+        ;;
+    esac
+    case "$prune_exe" in
+      "$prune_release/"*) printf '%s\n' "$prune_pid"; return 0 ;;
+    esac
+    prune_cwd=$(readlink "$prune_proc/cwd" 2>/dev/null) || {
+      prune_cwd=""
+      if [ -d "$prune_proc" ]; then prune_unknown=true; fi
+    }
+    case "$prune_cwd" in
+      "$prune_release" | "$prune_release/"*) printf '%s\n' "$prune_pid"; return 0 ;;
+    esac
+    if grep -F " $prune_release/" "$prune_proc/maps" >/dev/null 2>&1; then
+      printf '%s\n' "$prune_pid"
+      return 0
+    else
+      prune_maps_status=$?
+      if [ "$prune_maps_status" -gt 1 ] && [ -d "$prune_proc" ]; then
+        prune_unknown=true
+      fi
+    fi
+  done
+  [ "$prune_unknown" = false ] && [ "$prune_self_seen" = true ] || return 2
+  return 1
+)
+
 prune_installed_releases() {
   # Old interactive sessions may still need their matching code-mode host.
   # Updates prune only when requested, after verifying the selected executable.
@@ -806,6 +886,7 @@ prune_installed_releases() {
 
   cleanup_stale_install_artifacts
 
+  prune_kept=0
   for old_release in "$releases_path"/*; do
     [ "$old_release" != "$current_path" ] || continue
     [ -d "$old_release" ] && [ ! -L "$old_release" ] || continue
@@ -814,10 +895,27 @@ prune_installed_releases() {
       [ -x "$old_release/codex" ] &&
         [ -x "$old_release/codex-resources/rg" ] || continue
     fi
+    if prune_using_pid=$(old_release_usage "$old_release"); then
+      step "Kept old package in use by PID $prune_using_pid: $(basename "$old_release")"
+      prune_kept=$((prune_kept + 1))
+      continue
+    else
+      prune_usage_status=$?
+      if [ "$prune_usage_status" != 1 ]; then
+        warn "Could not inspect all running processes; keeping old package: $(basename "$old_release")"
+        prune_kept=$((prune_kept + 1))
+        continue
+      fi
+    fi
     rm -rf -- "$old_release"
     step "Removed old package: $(basename "$old_release")"
   done
-  step "Only the current installed package is retained."
+  if [ "$prune_kept" -gt 0 ]; then
+    step "Kept $prune_kept old package(s) for running or uninspectable processes."
+    step "Finish old sessions, stop the daemon with 'codex app-server daemon stop', then rerun 'codex update --prune'."
+  else
+    step "Only the current installed package is retained."
+  fi
 }
 
 replace_path_with_symlink() {

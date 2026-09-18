@@ -739,22 +739,18 @@ def run_installer_in(
         encoding="utf-8",
     )
     fake_curl.chmod(0o755)
-    if force_macos or platform == "android":
-        fake_uname = bin_dir / "uname"
-        fake_uname.write_text(
-            "#!/bin/sh\n"
-            'case "$1" in\n'
-            + (
-                "  -s) printf 'Linux\\n' ;;\n"
-                if platform == "android"
-                else "  -s) printf 'Darwin\\n' ;;\n"
-            )
-            + ("  -o) printf 'Android\\n' ;;\n" if platform == "android" else "")
-            + "  -m) printf 'arm64\\n' ;;\n"
-            "esac\n",
-            encoding="utf-8",
-        )
-        fake_uname.chmod(0o755)
+    # Keep platform fixtures independent of the host, including Termux.
+    system = "Darwin" if force_macos else "Linux"
+    operating_system = "Android" if platform == "android" else "GNU/Linux"
+    write_executable(
+        bin_dir / "uname",
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        f"  -s) printf '{system}\\n' ;;\n"
+        f"  -o) printf '{operating_system}\\n' ;;\n"
+        "  -m) printf 'arm64\\n' ;;\n"
+        "esac\n",
+    )
     if old_updater_parent_pid is not None:
         fake_ps = bin_dir / "ps"
         fake_ps.write_text(
@@ -798,7 +794,7 @@ def run_installer_in(
             "CODEX_TEST_RELEASES_MODE": releases_mode,
             "CODEX_TEST_REQUEST_LOG": str(request_log),
             "HOME": str(home),
-            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "PATH": f"{bin_dir}:{os.environ.get('PATH', os.defpath)}",
             "SHELL": "/bin/sh",
         }
     )

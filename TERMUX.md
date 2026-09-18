@@ -13,7 +13,7 @@ upstream commit. Development main keeps its upstream `0.0.0` placeholder.
 
 The actual fork source commit, dirty state and packaging revision remain in
 `BUILD-INFO.json`. Release tags and installation directories use an internal key
-such as `0.155.0+termux.8` so an adaptation fix can update the same official
+such as `0.155.0+termux.9` so an adaptation fix can update the same official
 version. The updater reads that key from the local build metadata; it is not
 used as the runtime version. Existing installations with the older version
 suffix can upgrade normally.
@@ -152,18 +152,30 @@ codex update
 Older manually unpacked candidates need that initial installation once. The
 installer prints any required PATH setup instructions.
 
-To update and reclaim old installed packages in one command, close all other
-Codex sessions first and run:
+To update and reclaim unused old installed packages in one command, run:
 
 ```sh
 codex update --prune
 ```
 
 The installer switches `current` and verifies the new executable before pruning,
-while still holding the existing installer lock. It keeps only `current`, with
-no rollback version. If the latest release is already installed, it still
-performs cleanup without downloading the package again. A failed installation
-or executable verification does not run pruning.
+while still holding the existing installer lock. It keeps `current` and packages
+still used by running processes. An old daemon or session may need its matching
+code-mode host even after the visible command has been updated. If the latest
+release is already installed, cleanup runs without downloading the package again.
+A failed installation or executable verification does not run pruning.
+
+For complete cleanup, finish tasks and exit all other Codex sessions, then run:
+
+```sh
+codex app-server daemon stop
+codex update --prune
+```
+
+Leaving the Agents screen with Escape does not stop its daemon. A task marked
+Finished does not mean that the daemon has exited. An ordinary `codex` or
+`codex resume` session can also reuse an existing daemon. Restart Codex normally
+after updating; `codex agents` starts the daemon when needed.
 
 If your installed CLI predates `codex update --prune`, use the current installer
 once to update and clean up:
@@ -181,14 +193,20 @@ codex_installer=$(curl -fsSL https://github.com/shinokiri/codex-termux-native/re
   printf '%s\n' "$codex_installer" | sh -s -- --prune
 ```
 
-`--prune` keeps only the package selected by `current`, with no rollback version.
-It removes older package and legacy platform-npm installs, along with temporary
-files left by interrupted installations. It validates `current` before cleanup
-and leaves unrecognized directories alone. It uses the existing installer lock
-and does not download a version, change PATH, or remove sessions, authentication
-or configuration. Normal installation and `codex update` without `--prune`
-retain older packages, because an already-running CLI may still need its
-matching code-mode host. Do not launch another Codex process during cleanup.
+`--prune` removes unused older package and legacy platform-npm installs, along
+with temporary files left by interrupted installations. It validates `current`
+before cleanup and leaves unrecognized directories alone. Before removing an old
+package, it checks the user's processes for executables, working directories,
+and mapped files inside that package. A package is retained if it is in use or
+process inspection is incomplete. Only the CLI ancestor performing this update
+is exempt; running sessions, daemons, helpers, and unrelated update processes
+remain protected. After these processes exit, rerun cleanup to remove the package.
+
+This protection is included starting with packaging revision 9. Pruning does not
+reserve an extra rollback version. It uses the existing installer lock and does
+not download a version, change PATH, or remove sessions, authentication or
+configuration. Normal installation and `codex update` without `--prune` retain
+older packages. Do not manually launch a binary from an old package during cleanup.
 
 ## Status
 
