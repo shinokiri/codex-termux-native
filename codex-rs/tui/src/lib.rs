@@ -4,8 +4,6 @@
 #![recursion_limit = "256"]
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
-// Android code generation for app-server futures exceeds the default limit.
-#![cfg_attr(target_os = "android", recursion_limit = "256")]
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
