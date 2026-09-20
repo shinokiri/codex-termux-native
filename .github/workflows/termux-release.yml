@@ -12,7 +12,7 @@ on:
       revision:
         description: "Internal package revision; Codex keeps the official version"
         type: string
-        default: "9"
+        default: "10"
       retry:
         description: "Validate the current prepared source again after fixing a failure"
         type: boolean
@@ -42,6 +42,7 @@ jobs:
     permissions:
       contents: write
     outputs:
+      blocked: ${{ steps.check.outputs.blocked }}
       build: ${{ steps.source.outputs.build }}
       source_ref: ${{ steps.source.outputs.source_ref }}
       version: ${{ steps.source.outputs.version }}
@@ -54,7 +55,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '9' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '10' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -75,7 +76,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '9' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '10' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -97,6 +98,17 @@ jobs:
           path: ${{ runner.temp }}/termux-release-conflicts.patch
           if-no-files-found: ignore
           retention-days: 3
+
+  release-blocked:
+    needs: prepare
+    if: needs.prepare.outputs.blocked == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Report the unpublished release
+        run: |
+          echo "::error::The latest upstream release has an unpublished Termux build. See the prepare job summary for recovery instructions."
+          exit 1
 
   format:
     needs: prepare
@@ -141,14 +153,25 @@ jobs:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
   android:
-    needs: [prepare, format, regression, native, websocket, mobile-idle, mobile-ui]
+    needs:
+      [prepare, format, regression, native, websocket, mobile-idle, mobile-ui]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/termux-build.yml
     with:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
   publish:
-    needs: [prepare, format, regression, native, websocket, mobile-idle, mobile-ui, android]
+    needs:
+      [
+        prepare,
+        format,
+        regression,
+        native,
+        websocket,
+        mobile-idle,
+        mobile-ui,
+        android,
+      ]
     if: needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

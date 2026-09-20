@@ -96,9 +96,19 @@ def prepare(args, api):
     # retried prepare job resume even if its first attempt already wrote a tag.
     retry = args.retry or int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")) > 1
     if previous and not retry and not args.dry_run:
-        write_outputs(
-            build="false", reason="already-attempted-use-retry-for-a-failed-run"
+        message = (
+            f"Termux {version} was attempted but is still unpublished. "
+            "Inspect the earlier release run, fix its prepared source, then "
+            "dispatch Termux release updates with retry=true."
         )
+        print(f"::warning::{message}")
+        if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+            with Path(summary).open("a") as target:
+                target.write(
+                    f"### Release needs maintenance\n\n{message}\n\n"
+                    f"[Release runs](https://github.com/{REPOSITORY}/actions/workflows/termux-release.yml)\n"
+                )
+        write_outputs(build="false", blocked="true", reason="release-needs-maintenance")
         return
     if args.check_only:
         write_outputs(build="true")

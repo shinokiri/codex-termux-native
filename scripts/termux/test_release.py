@@ -149,12 +149,13 @@ class ReleaseTest(unittest.TestCase):
             with self.assertRaises(HTTPError):
                 prepare(args, api)
             push.assert_not_called()
-            # Ordinary scheduled checks still deduplicate a recorded attempt.
+            # Scheduled checks report maintenance without starting more builds.
             args.check_only = True
             prepare(args, api)
             outputs.assert_called_with(
                 build="false",
-                reason="already-attempted-use-retry-for-a-failed-run",
+                blocked="true",
+                reason="release-needs-maintenance",
             )
             assemble.assert_called_once()
             # GitHub reruns the failed prepare job with the original arguments.
@@ -178,6 +179,45 @@ class ReleaseTest(unittest.TestCase):
             with patch.dict(os.environ, {"GITHUB_RUN_ATTEMPT": "3"}):
                 prepare(args, api)
             outputs.assert_called_with(build="false", reason="already-published")
+
+    def test_unpublished_attempt_reports_recovery_without_rebuilding(self):
+        api = Mock(token="local-fixture")
+        api.request.return_value = {
+            "tag_name": "rust-v0.155.1",
+            "draft": False,
+            "prerelease": False,
+        }
+        api.repo.side_effect = [None, {"object": {"sha": "a" * 40}}]
+        args = SimpleNamespace(revision=10, retry=False, dry_run=False, check_only=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            summary = Path(temporary) / "summary.md"
+            output = Path(temporary) / "output"
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "GITHUB_RUN_ATTEMPT": "1",
+                        "GITHUB_STEP_SUMMARY": str(summary),
+                        "GITHUB_OUTPUT": str(output),
+                    },
+                ),
+                patch("scripts.termux.release.assemble") as assemble,
+                patch("scripts.termux.release.subprocess.run") as push,
+            ):
+                prepare(args, api)
+            self.assertIn("0.155.1+termux.10", summary.read_text())
+            self.assertIn("retry=true", summary.read_text())
+            self.assertIn("actions/workflows/termux-release.yml", summary.read_text())
+            self.assertEqual(
+                output.read_text().splitlines(),
+                [
+                    "build=false",
+                    "blocked=true",
+                    "reason=release-needs-maintenance",
+                ],
+            )
+            assemble.assert_not_called()
+            push.assert_not_called()
 
     def test_publish_waits_for_all_assets_and_checks_the_built_source(self):
         with tempfile.TemporaryDirectory() as temporary:
