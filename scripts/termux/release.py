@@ -108,9 +108,7 @@ def prepare(args, api):
                     f"### Release needs maintenance\n\n{message}\n\n"
                     f"[Release runs](https://github.com/{REPOSITORY}/actions/workflows/termux-release.yml)\n"
                 )
-        write_outputs(
-            build="false", blocked="true", reason="release-needs-maintenance"
-        )
+        write_outputs(build="false", blocked="true", reason="release-needs-maintenance")
         return
     if args.check_only:
         write_outputs(build="true")
