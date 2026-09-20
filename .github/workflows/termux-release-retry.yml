@@ -33,6 +33,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
+          # A scheduled maintenance report is not another build attempt.
+          # Retrying it would hide the exhausted original run behind new retries.
+          failures=$(gh api "repos/$GH_REPO/actions/runs/$RELEASE_RUN_ID/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | select(.name != "release-blocked")] | length')
+          if [ "$failures" = "0" ]; then
+            echo "No build jobs to retry; inspect the blocked release summary."
+            exit 0
+          fi
           sleep 60
           if [ "$(gh api "repos/$GH_REPO/actions/runs/$RELEASE_RUN_ID" --jq '.status')" = "completed" ]; then
             gh run rerun "$RELEASE_RUN_ID" --failed
