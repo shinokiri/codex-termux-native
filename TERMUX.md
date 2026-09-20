@@ -133,7 +133,7 @@ Configure it in `$CODEX_HOME/app-server-daemon/settings.json` (by default under
 `~/.codex`), preserving any other existing fields:
 
 ```json
-{"updater":{"autoUpdateEnabled":true,"updateIntervalMinutes":60}}
+{ "updater": { "autoUpdateEnabled": true, "updateIntervalMinutes": 60 } }
 ```
 
 On Termux, `codex app-server daemon stop` stops both the app-server and its updater.
@@ -245,17 +245,17 @@ all passed. A missing-tag API lookup initially blocked publication; the
 used the same verified artifact after testing the controller fix, without
 rebuilding Android or V8. All three published asset digests matched the artifact.
 
-| Area | Implementation | Validation still required |
-| --- | --- | --- |
-| File locks | Android `flock`, standard library elsewhere; including rollout writer and publication locks | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed |
-| OpenSSL | Android-only vendored build feature; Android CLI and network-probe linking passed | Device handshakes; this does not configure certificate roots |
-| DNS | Target Android/Bionic so system resolution can follow Android networking | Native binary DNS and HTTPS tests with the user's TUN |
-| TLS certificates | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification | Device HTTPS and WSS roots; 10 existing CA integration tests passed |
-| V8 / code mode | Exact `v8 = 150.4.0` Android source compilation, paired cache verification and code-mode host linking passed; Android binding-header patch; NDK compiler builtins selected for the final link | V8 sandbox and code-mode execution on device |
-| PTY | Android provides `openpty` since API 23; no replacement added | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending |
-| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshot v2 resolves `env` through `PATH`; stdio MCP children inherit Termux execution variables | Targeted shell tests and Android build passed; broader device subprocess checks remain |
-| Credential storage | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback | Real mock-backend regression and existing MCP fallback checks added; device login pending |
-| Process sandbox | Upstream has no Android process-sandbox backend | Permission and approval behavior on device; executor requests that require a sandbox are unsupported |
+| Area                      | Implementation                                                                                                                                                                                | Validation still required                                                                            |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| File locks                | Android `flock`, standard library elsewhere; including rollout writer and publication locks                                                                                                   | Device filesystem tests; 5 Linux semantic tests and Android API compilation passed                   |
+| OpenSSL                   | Android-only vendored build feature; Android CLI and network-probe linking passed                                                                                                             | Device handshakes; this does not configure certificate roots                                         |
+| DNS                       | Target Android/Bionic so system resolution can follow Android networking                                                                                                                      | Native binary DNS and HTTPS tests with the user's TUN                                                |
+| TLS certificates          | Both locked `openssl-probe` versions recognize Termux's CA bundle; nested TLS errors retain their classification                                                                              | Device HTTPS and WSS roots; 10 existing CA integration tests passed                                  |
+| V8 / code mode            | Exact `v8 = 150.4.0` Android source compilation, paired cache verification and code-mode host linking passed; Android binding-header patch; NDK compiler builtins selected for the final link | V8 sandbox and code-mode execution on device                                                         |
+| PTY                       | Android provides `openpty` since API 23; no replacement added                                                                                                                                 | NDK link probe and Rust Android API checks passed; device shell, resize and interrupt pending        |
+| Shell and local MCP tools | Android shell discovery uses validated `$SHELL`; snapshot v2 resolves `env` through `PATH`; stdio MCP children inherit Termux execution variables                                             | Targeted shell tests and Android build passed; broader device subprocess checks remain               |
+| Credential storage        | Reject keyring's entry-local mock save so automatic mode uses the existing file fallback                                                                                                      | Real mock-backend regression and existing MCP fallback checks added; device login pending            |
+| Process sandbox           | Upstream has no Android process-sandbox backend                                                                                                                                               | Permission and approval behavior on device; executor requests that require a sandbox are unsupported |
 
 The upstream shell snapshot capture finds `env` through `PATH`,
 supporting Termux's prefix while bypassing same-named shell functions. A shell
@@ -449,7 +449,6 @@ the candidate. Python is only a dependency of this optional check, not the CLI.
 This does not test the interactive UI, MCP servers, account login or session
 resume, and does not install the package or alter conversation archives.
 
-
 Android uses the upstream Responses WebSocket transport, including connection
 reuse and heartbeat handling between model requests. Version 0.155.0 removes the
 previous ten-second idle disconnect. Traffic observations confirmed that the
@@ -462,7 +461,6 @@ tradeoff, not a measured battery-life improvement.
 The built-in Statsig metrics exporter remains disabled on Android to avoid
 periodic background uploads; explicitly configured OTLP exporters remain
 available. This changes diagnostic reporting, not model request processing.
-
 
 Android also uses startup, explicit status queries, inference notifications and
 recovery events to refresh account usage instead of polling while idle. Analytics
