@@ -31,7 +31,9 @@ impl TestDaemon {
     }
 
     fn with_release(release_name: &str) -> Result<Self> {
-        let home = tempfile::Builder::new().tempdir_in("/tmp")?;
+        // Release builds reject helper aliases below the system temporary directory.
+        let user_home = std::env::var_os("HOME").context("HOME is not set")?;
+        let home = tempfile::Builder::new().tempdir_in(PathBuf::from(user_home))?;
         let codex = codex_utils_cargo_bin::cargo_bin("codex")?;
         let codex_source = std::fs::canonicalize(&codex)?;
         let standalone = home.path().join("packages/standalone");
@@ -660,7 +662,13 @@ fn packaged_daemon_launch(action: &str, initial: InitialDaemon) -> Result<()> {
         assert_eq!(standalone.join("current").canonicalize()?, cli_selection);
     }
     if action == "bootstrap" {
-        assert_eq!(output["autoUpdateEnabled"], false);
+        // Tagged CLI packages follow the stable channel; development packages stay pinned.
+        // This fixture has no Termux release provenance, so Android also stays pinned.
+        let version = env!("CARGO_PKG_VERSION");
+        let expected_auto_update = !cfg!(target_os = "android")
+            && version != "0.0.0"
+            && !version.contains('-');
+        assert_eq!(output["autoUpdateEnabled"], expected_auto_update);
     }
     Ok(())
 }
