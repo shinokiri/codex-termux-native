@@ -1468,7 +1468,10 @@ fn curated_sync_lock_serializes_writers_and_releases_on_drop() {
         .write(true)
         .open(home.path().join(super::CURATED_PLUGINS_SYNC_LOCK_FILE))
         .expect("second lock handle");
-    assert!(!codex_utils_file_lock::try_lock(&contender).expect("contended lock"));
+    assert!(matches!(
+        codex_utils_file_lock::try_lock(&contender),
+        Err(std::fs::TryLockError::WouldBlock)
+    ));
     drop(held);
-    assert!(codex_utils_file_lock::try_lock(&contender).expect("released lock"));
+    codex_utils_file_lock::try_lock(&contender).expect("released lock");
 }
