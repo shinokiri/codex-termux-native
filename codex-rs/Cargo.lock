@@ -3884,6 +3884,7 @@ dependencies = [
  "codex-protocol",
  "codex-secrets",
  "codex-terminal-detection",
+ "codex-utils-file-lock",
  "codex-utils-template",
  "codex-workload-identity",
  "core_test_support",

@@ -61,6 +61,8 @@ jobs:
           env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store
       - name: Test relocated thread writer locks and publication coordination
         run: just test --locked -p codex-rollout --lib -E 'test(writer_lock::tests::)'
+      - name: Test login and gateway OAuth credential locking
+        run: just test --locked -p codex-login --lib
       - name: Test existing MCP credential fallback and deletion
         run: >-
           just test --locked -p codex-rmcp-client --lib
@@ -78,6 +80,8 @@ jobs:
         run: just fix -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store --locked --examples
       - name: Check relocated writer locks with Clippy
         run: just fix -p codex-rollout --locked --lib
+      - name: Check gateway credential locking with Clippy
+        run: just fix -p codex-login --locked --lib
       - name: Format repository
         run: just fmt
       - name: Check generated changes
