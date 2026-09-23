@@ -112,7 +112,10 @@ async fn websocket_waiting_honors_server_advice_without_resetting_backoff() {
             CodexErr::Stream("closed".into()).with_retry_delay(Duration::from_millis(20)),
             Duration::from_millis(20),
         ),
-        (CodexErr::Stream("closed again".into()), Duration::from_secs(10)),
+        (
+            CodexErr::Stream("closed again".into()),
+            Duration::from_secs(10),
+        ),
     ] {
         let before = tokio::time::Instant::now();
         super::handle_response_stream_error(
