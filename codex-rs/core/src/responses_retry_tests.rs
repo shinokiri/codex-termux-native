@@ -129,7 +129,12 @@ async fn websocket_waiting_honors_server_advice_without_resetting_backoff() {
         )
         .await
         .expect("retry should succeed");
-        pretty_assertions::assert_eq!(before.elapsed(), expected_delay);
+        // Tokio timers round deadlines to their millisecond tick, even with paused time.
+        let elapsed = before.elapsed();
+        assert!(
+            elapsed >= expected_delay && elapsed <= expected_delay + Duration::from_millis(1),
+            "waited {elapsed:?}, expected {expected_delay:?} within timer resolution",
+        );
         assert!(session.services.model_client.responses_websocket_enabled());
     }
 }
