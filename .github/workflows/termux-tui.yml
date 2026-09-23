@@ -62,7 +62,8 @@ jobs:
       - name: Test the update command entry point
         run: just test --locked -p codex-cli --test update
       - name: Test daemon lifecycle and Termux package updater startup
-        run: just test --locked -p codex-cli --test app_server_daemon
+        # Package migration tests copy the real CLI several times; bound peak disk use.
+        run: just test --locked -p codex-cli --test app_server_daemon --test-threads=1
       - name: Check update-channel helpers with Clippy
         run: just fix -p codex-install-context -p codex-app-server-daemon --locked --lib
       - name: Check generated changes

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Check a candidate's CLI and real code-mode host without a Codex account."""
+"""Check a candidate's CLI, Unix listener and code-mode host without an account."""
 
 import argparse
 import asyncio
 import json
+import os
+import stat
 from pathlib import Path
 import struct
 import tempfile
@@ -158,17 +160,82 @@ async def command(*args, directory, timeout):
             await process.wait()
 
 
+async def app_server(binary, candidate):
+    # Keep helper aliases outside the OS temporary directory on release builds.
+    with tempfile.TemporaryDirectory(
+        prefix="codex-socket-smoke-", dir=candidate.parent
+    ) as directory:
+        home = Path(directory)
+        (home / "config.toml").write_text(
+            'model = "termux-smoke"\nmodel_provider = "termux_smoke"\n'
+            '[model_providers.termux_smoke]\nname = "Local smoke"\n'
+            'base_url = "http://127.0.0.1:9/v1"\nwire_api = "responses"\n'
+            "requires_openai_auth = false\n[features]\nplugins = false\n"
+            "[analytics]\nenabled = false\n"
+        )
+        socket_path = home / "app.sock"
+        physical = None
+        with (home / "server.log").open("w+") as log:
+            process = await asyncio.create_subprocess_exec(
+                binary,
+                "app-server",
+                "--listen",
+                "unix://" + str(socket_path),
+                cwd=home,
+                env={**os.environ, "CODEX_HOME": str(home)},
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=log,
+                stderr=log,
+            )
+            try:
+                for _ in range(100):
+                    if process.returncode is not None:
+                        log.seek(0)
+                        raise RuntimeError(
+                            "Unix listener failed: " + log.read()[-2000:]
+                        )
+                    if socket_path.is_socket():
+                        break
+                    await asyncio.sleep(0.1)
+                else:
+                    raise RuntimeError("Unix listener did not become ready")
+                if not socket_path.is_symlink():
+                    raise RuntimeError("Unix listener lacks the protected socket alias")
+                physical = socket_path.resolve(strict=True)
+                expected = Path("/data/data/com.termux/files/usr/tmp").resolve() / "cdx"
+                if physical.parent != expected or len(os.fsencode(physical)) >= 108:
+                    raise RuntimeError("Invalid protected Android socket path")
+                if stat.S_IMODE(physical.parent.stat().st_mode) != 0o700:
+                    raise RuntimeError("Protected socket directory is not private")
+                if stat.S_IMODE(physical.stat().st_mode) != 0o600:
+                    raise RuntimeError("Control socket permissions are not private")
+            finally:
+                if process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), 10)
+                    except asyncio.TimeoutError:
+                        process.kill()
+                        await process.wait()
+                if physical is not None:
+                    # This lock belongs to the unique, now-stopped smoke listener.
+                    physical.with_suffix(".lock").unlink(missing_ok=True)
+        if socket_path.is_symlink() or (physical is not None and physical.exists()):
+            raise RuntimeError("Unix listener did not remove its sockets")
+
+
 async def check(args):
     binary_dir = args.candidate.resolve() / "bin"
     with tempfile.TemporaryDirectory(prefix="codex-termux-smoke-") as directory:
         await command(
             binary_dir / "codex", "--version", directory=directory, timeout=10
         )
+        await app_server(binary_dir / "codex", args.candidate.resolve())
         await asyncio.wait_for(
             code_mode(binary_dir / "codex-code-mode-host", directory), 45
         )
         print(
-            "PASS: CLI, JavaScript, Promise, cross-cell state, host shutdown",
+            "PASS: CLI, protected Unix socket, JavaScript, Promise, cross-cell state, host shutdown",
             flush=True,
         )
         if args.network:
@@ -188,7 +255,9 @@ def main():
     try:
         asyncio.run(check(args))
     except asyncio.TimeoutError:
-        parser.exit(1, "FAIL: CLI, code-mode host or network probe timed out\n")
+        parser.exit(
+            1, "FAIL: CLI, app-server, code-mode host or network probe timed out\n"
+        )
     except (
         OSError,
         ValueError,
