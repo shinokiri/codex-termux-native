@@ -12,7 +12,7 @@ on:
       revision:
         description: "Internal package revision; Codex keeps the official version"
         type: string
-        default: "11"
+        default: "12"
       retry:
         description: "Validate the current prepared source again after fixing a failure"
         type: boolean
@@ -55,7 +55,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '11' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '12' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -76,7 +76,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '11' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '12' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -153,8 +153,8 @@ jobs:
       source_ref: ${{ needs.prepare.outputs.source_ref }}
 
   android:
-    needs:
-      [prepare, format, regression, native, websocket, mobile-idle, mobile-ui]
+    # Compile alongside regression checks; publication still requires every gate.
+    needs: [prepare, format]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/termux-build.yml
     with:

@@ -1459,3 +1459,16 @@ fn curated_repo_backup_archive_zip_bytes(sha: &str) -> Vec<u8> {
 
     writer.finish().expect("finish zip writer").into_inner()
 }
+
+#[test]
+fn curated_sync_lock_serializes_writers_and_releases_on_drop() {
+    let home = tempfile::tempdir().expect("temporary Codex home");
+    let held = super::lock_curated_plugins_startup_sync(home.path()).expect("initial lock");
+    let contender = std::fs::File::options()
+        .write(true)
+        .open(home.path().join(super::CURATED_PLUGINS_SYNC_LOCK_FILE))
+        .expect("second lock handle");
+    assert!(!codex_utils_file_lock::try_lock(&contender).expect("contended lock"));
+    drop(held);
+    assert!(codex_utils_file_lock::try_lock(&contender).expect("released lock"));
+}

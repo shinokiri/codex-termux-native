@@ -11,10 +11,20 @@ use std::path::PathBuf;
 
 /// Returns the fixed executor-local directory that every sandbox must hide.
 pub fn shared_daemon_socket_directory() -> io::Result<PathBuf> {
-    // Resolve the system alias /tmp -> /private/tmp on macOS.
-    let temporary_root = fs::canonicalize("/tmp")?;
-    let uid = unsafe { libc::geteuid() };
-    Ok(temporary_root.join(format!("codex-daemon-{uid}")))
+    #[cfg(target_os = "android")]
+    {
+        // Termux cannot create directories in /tmp. Keep the rendezvous root
+        // fixed inside its private app data, independent of environment variables.
+        // A short name leaves room for the SHA-256 socket filename in sun_path.
+        Ok(fs::canonicalize("/data/data/com.termux/files/usr/tmp")?.join("cdx"))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        // Resolve the system alias /tmp -> /private/tmp on macOS.
+        let temporary_root = fs::canonicalize("/tmp")?;
+        let uid = unsafe { libc::geteuid() };
+        Ok(temporary_root.join(format!("codex-daemon-{uid}")))
+    }
 }
 
 /// Creates the reserved directory, rejecting symlinks and unsafe existing owners or modes.

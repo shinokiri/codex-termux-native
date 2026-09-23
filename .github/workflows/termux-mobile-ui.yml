@@ -47,11 +47,12 @@ jobs:
         with:
           version: "0.11.3"
       - name: Verify analytics delivery and TUI behavior
-        run: just test --locked -p codex-analytics -p codex-tui
+        run: just test --locked -p codex-analytics -p codex-tui -p codex-core-plugins
       - name: Check affected analytics and TUI crates
         run: |
           just fix -p codex-analytics --locked --lib
           just fix -p codex-tui --locked --lib
+          just fix -p codex-core-plugins --locked --lib
       - name: Format the final changes
         run: just fmt
       - name: Retain corrections for review

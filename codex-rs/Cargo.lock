@@ -3189,6 +3189,7 @@ dependencies = [
  "codex-skills",
  "codex-tools",
  "codex-utils-absolute-path",
+ "codex-utils-file-lock",
  "codex-utils-path",
  "codex-utils-path-uri",
  "codex-utils-plugins",
