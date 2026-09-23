@@ -665,9 +665,8 @@ fn packaged_daemon_launch(action: &str, initial: InitialDaemon) -> Result<()> {
         // Tagged CLI packages follow the stable channel; development packages stay pinned.
         // This fixture has no Termux release provenance, so Android also stays pinned.
         let version = env!("CARGO_PKG_VERSION");
-        let expected_auto_update = !cfg!(target_os = "android")
-            && version != "0.0.0"
-            && !version.contains('-');
+        let expected_auto_update =
+            !cfg!(target_os = "android") && version != "0.0.0" && !version.contains('-');
         assert_eq!(output["autoUpdateEnabled"], expected_auto_update);
     }
     Ok(())
