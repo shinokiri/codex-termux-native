@@ -83,7 +83,7 @@ pub(crate) async fn handle_response_stream_error(
         && !turn_context.provider.info().is_amazon_bedrock()
     {
         let retry_delay = err
-            .retry_delay()
+            .server_retry_delay()
             .unwrap_or(retry_state.connection_retry_delay);
         warn!(
             turn_id = %turn_context.sub_id,
