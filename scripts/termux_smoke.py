@@ -170,8 +170,8 @@ async def app_server(binary, candidate):
             'model = "termux-smoke"\nmodel_provider = "termux_smoke"\n'
             '[model_providers.termux_smoke]\nname = "Local smoke"\n'
             'base_url = "http://127.0.0.1:9/v1"\nwire_api = "responses"\n'
-            'requires_openai_auth = false\n[features]\nplugins = false\n'
-            '[analytics]\nenabled = false\n'
+            "requires_openai_auth = false\n[features]\nplugins = false\n"
+            "[analytics]\nenabled = false\n"
         )
         socket_path = home / "app.sock"
         physical = None
@@ -191,7 +191,9 @@ async def app_server(binary, candidate):
                 for _ in range(100):
                     if process.returncode is not None:
                         log.seek(0)
-                        raise RuntimeError("Unix listener failed: " + log.read()[-2000:])
+                        raise RuntimeError(
+                            "Unix listener failed: " + log.read()[-2000:]
+                        )
                     if socket_path.is_socket():
                         break
                     await asyncio.sleep(0.1)
@@ -253,7 +255,9 @@ def main():
     try:
         asyncio.run(check(args))
     except asyncio.TimeoutError:
-        parser.exit(1, "FAIL: CLI, app-server, code-mode host or network probe timed out\n")
+        parser.exit(
+            1, "FAIL: CLI, app-server, code-mode host or network probe timed out\n"
+        )
     except (
         OSError,
         ValueError,
