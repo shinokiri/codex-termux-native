@@ -23,7 +23,11 @@ fn daemon_handoff_uses_selected_executable_and_propagates_failure() -> anyhow::R
             "app-server\ndaemon\nupdate\n--from-cli\n--yes\n",
         ),
     ] {
-        run_update_action(UpdateAction::Daemon(source), Some(&executable), /*prune*/ false)?;
+        run_update_action(
+            UpdateAction::Daemon(source),
+            Some(&executable),
+            /*prune*/ false,
+        )?;
         assert_eq!(std::fs::read_to_string(&receipt)?, expected);
     }
     std::fs::write(&executable, "#!/bin/sh\nexit 7\n")?;
