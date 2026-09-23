@@ -140,6 +140,10 @@ fn termux_updater_requires_a_stable_revision_and_current_latest_selection() {
         ("0.155.0+termux.9-x86_64-unknown-linux-musl", false),
     ] {
         let home = tempfile::TempDir::new().expect("home");
+        // Legacy ownership requires evidence of a previous daemon launch.
+        let state = home.path().join("app-server-daemon");
+        std::fs::create_dir(&state).expect("daemon state");
+        std::fs::write(state.join("app-server.stderr.log"), b"").expect("legacy launch record");
         let standalone = home.path().join("packages/standalone");
         let release = standalone.join("releases").join(name);
         let managed = release.join("bin/codex");
