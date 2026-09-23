@@ -220,7 +220,11 @@ async fn prepare_from_package(
         "daemon running state changed while awaiting confirmation; retry the command"
     );
     let backend = current_backend;
-    let stable = stable_version(&version).is_some();
+    #[cfg(target_os = "android")]
+    let release_version = termux::release_version(source, &version)?;
+    #[cfg(not(target_os = "android"))]
+    let release_version = stable_version(&version).map(|_| version.clone());
+    let stable = release_version.is_some();
     let releases = root.join("releases");
     std::fs::create_dir_all(&releases)?;
     let stage = tempfile::Builder::new()
@@ -245,8 +249,10 @@ async fn prepare_from_package(
         !stable || version == binary_version,
         "the CLI package version does not match its executable"
     );
-    let name = if stable && mode == InstallMode::Missing {
-        format!("{version}-{target}")
+    let name = if mode == InstallMode::Missing
+        && let Some(release_version) = release_version
+    {
+        format!("{release_version}-{target}")
     } else {
         format!("local-{digest}-{target}")
     };
@@ -437,12 +443,15 @@ fn validate_package(root: &Path) -> Result<()> {
         } else {
             "bin/codex-code-mode-host"
         },
-        if cfg!(windows) {
+    ];
+    // Termux supplies ripgrep through its package manager, outside the CLI package.
+    if !cfg!(target_os = "android") {
+        names.push(if cfg!(windows) {
             "codex-path/rg.exe"
         } else {
             "codex-path/rg"
-        },
-    ];
+        });
+    }
     if cfg!(windows) {
         names.extend([
             "codex-resources/codex-command-runner.exe",
@@ -472,6 +481,7 @@ fn validate_package(root: &Path) -> Result<()> {
 
 fn platform_target() -> Result<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("android", "aarch64") => Ok("aarch64-linux-android"),
         ("macos", "aarch64") => Ok("aarch64-apple-darwin"),
         ("macos", "x86_64") => Ok("x86_64-apple-darwin"),
         ("linux", "aarch64") if cfg!(target_env = "gnu") => Ok("aarch64-unknown-linux-gnu"),
@@ -491,3 +501,7 @@ mod windows;
 #[cfg(test)]
 #[path = "prepare_install_tests.rs"]
 mod tests;
+
+#[cfg(any(target_os = "android", test))]
+#[path = "prepare_install_termux.rs"]
+mod termux;
