@@ -73,7 +73,7 @@ async fn websocket_waiting_respects_retry_policy(
         .await;
     let mut client_session = session.services.model_client.new_session();
     tokio::time::pause();
-    super::handle_retryable_response_stream_error(
+    super::handle_response_stream_error(
         &mut super::ResponsesStreamRetryState::default(),
         /*max_retries*/ 0,
         error,
@@ -88,4 +88,45 @@ async fn websocket_waiting_respects_retry_policy(
         session.services.model_client.responses_websocket_enabled(),
         websocket_enabled
     );
+}
+
+#[tokio::test]
+async fn websocket_waiting_honors_server_advice_without_resetting_backoff() {
+    let (session, turn_context, _events) =
+        crate::session::tests::make_session_and_context_with_auth_and_config_and_rx(
+            codex_login::CodexAuth::from_api_key("test-key"),
+            Vec::new(),
+            |config| {
+                config.model_provider.supports_websockets = true;
+                config
+                    .features
+                    .enable(codex_features::Feature::UnboundedConnectionRetries);
+            },
+        )
+        .await;
+    let mut client_session = session.services.model_client.new_session();
+    let mut retry_state = super::ResponsesStreamRetryState::default();
+    tokio::time::pause();
+    for (error, expected_delay) in [
+        (
+            CodexErr::Stream("closed".into()).with_retry_delay(Duration::from_millis(20)),
+            Duration::from_millis(20),
+        ),
+        (CodexErr::Stream("closed again".into()), Duration::from_secs(10)),
+    ] {
+        let before = tokio::time::Instant::now();
+        super::handle_response_stream_error(
+            &mut retry_state,
+            /*max_retries*/ 0,
+            error,
+            &mut client_session,
+            &session,
+            &turn_context,
+            ResponsesStreamRequest::Sampling,
+        )
+        .await
+        .expect("retry should succeed");
+        pretty_assertions::assert_eq!(before.elapsed(), expected_delay);
+        assert!(session.services.model_client.responses_websocket_enabled());
+    }
 }
