@@ -83,6 +83,12 @@ and runs `just bazel-lock-update` before committing. Retries preserve source
 fixes already on the prepared branch while refreshing these generated locks.
 Unchanged release checks finish before installing build tools.
 
+For a device-validated maintenance release, dispatch with `publish=false`. All
+source preparation, regression gates and Android packaging still run, but the
+candidate stays in the workflow artifacts. After checking it on a device, use
+`scripts/termux/release.py publish` with that artifact's exact version and source
+commit. Scheduled updates continue publishing after their validation gates.
+
 The release controller checks formatting before starting native and CLI regression
 compilation. The CLI regression job disables test-profile debug assertions to compile the
 release-only update paths, while leaving optimization off. Update-popup tests

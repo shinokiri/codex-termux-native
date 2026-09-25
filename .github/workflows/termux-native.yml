@@ -54,11 +54,11 @@ jobs:
           version: "0.11.3"
       - name: Verify workspace manifests
         run: python3 .github/scripts/verify_cargo_workspace_manifests.py
-      - name: Test locks, HTTP, shell and keyring behavior
+      - name: Test locks, HTTP, WebSocket, shell and keyring behavior
         id: tests
         continue-on-error: true
         run: |
-          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-shell-command -p codex-keyring-store -p codex-uds
+          env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-http-client -p codex-websocket-client -p codex-shell-command -p codex-keyring-store -p codex-uds
       - name: Test relocated thread writer locks and publication coordination
         run: just test --locked -p codex-rollout --lib -E 'test(writer_lock::tests::)'
       - name: Test login and gateway OAuth credential locking

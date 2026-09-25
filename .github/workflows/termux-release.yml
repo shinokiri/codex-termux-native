@@ -12,11 +12,15 @@ on:
       revision:
         description: "Internal package revision; Codex keeps the official version"
         type: string
-        default: "12"
+        default: "13"
       retry:
         description: "Validate the current prepared source again after fixing a failure"
         type: boolean
         default: false
+      publish:
+        description: "Publish after validation; disable to inspect the candidate on a device first"
+        type: boolean
+        default: true
   repository_dispatch:
     types: [upstream-release]
   # A fork does not receive openai/codex's release event. This checks for a new
@@ -55,7 +59,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '12' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '13' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -76,7 +80,7 @@ jobs:
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '12' }}
+          TERMUX_RELEASE_REVISION: ${{ inputs.revision || '13' }}
           TERMUX_RELEASE_RETRY: ${{ github.event_name == 'push' || inputs.retry || false }}
         run: |
           options=()
@@ -172,7 +176,9 @@ jobs:
         mobile-ui,
         android,
       ]
-    if: needs.prepare.outputs.build == 'true'
+    if: >-
+      needs.prepare.outputs.build == 'true' &&
+      (github.event_name != 'workflow_dispatch' || inputs.publish)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
