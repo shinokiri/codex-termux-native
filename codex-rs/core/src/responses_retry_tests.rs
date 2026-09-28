@@ -213,7 +213,9 @@ async fn websocket_waiting_preserves_deadline_across_delayed_notification() {
             },
         )
         .await;
-    session.realtime_history = Some(Mutex::new(RealtimeHistoryState::default()));
+    std::sync::Arc::get_mut(&mut session)
+        .expect("unique test session")
+        .realtime_history = Some(Mutex::new(RealtimeHistoryState::default()));
     let mut client_session = session.services.model_client.new_session();
     let mut retry_state = ResponsesStreamRetryState::default();
 
