@@ -8950,7 +8950,10 @@ await new Promise(() => {});
             .join("\n"),
         _ => panic!("unexpected Code Mode output"),
     };
-    assert!(output_text.contains("yielded"));
+    assert!(
+        output_text.contains("yielded"),
+        "expected the script to reach its explicit yield: {output_text}"
+    );
     assert!(output_text.contains("Script running with cell ID 1"));
     // The request budget must actually trim a recorded call's arguments.
     assert_eq!(observed["cell_id"], "exec-a");
