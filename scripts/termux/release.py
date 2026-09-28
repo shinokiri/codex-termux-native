@@ -86,6 +86,8 @@ def prepare(args, api):
         )
     version = f"{tag.removeprefix('rust-v')}+termux.{args.revision}"
     release_tag = f"termux-v{version}"
+    print(f"upstream_release={tag}")
+    print(f"termux_release={release_tag}")
     published = api.repo(f"releases/tags/{quote(release_tag, safe='')}")
     if published and not published["draft"]:
         write_outputs(build="false", reason="already-published")
