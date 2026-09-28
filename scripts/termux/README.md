@@ -21,9 +21,13 @@ python3 scripts/termux/check_release_schedule.py --output release-schedule.json
 An existing `GH_TOKEN` is used when provided. Exit status 1 means the workflow is
 disabled, no original scheduled event arrived within the alert threshold, the
 latest scheduled run did not succeed, or GitHub could not be queried. The default
-threshold is 60 minutes (twelve requested intervals), configurable with
-`--max-age-minutes`. A recent queued or running release is reported as pending
-work, without treating it as a failed build.
+threshold is 480 minutes (eight hours), configurable with `--max-age-minutes`.
+This accommodates the accepted hourly delivery cadence: the September 28, 2026
+audit of 100 scheduled runs found intervals of 111–403 minutes. The threshold
+controls when a scheduling gap becomes an error; the release cron still requests
+a check every five minutes. Failed runs, disabled workflows and API errors remain
+errors regardless of this age threshold. A recent queued or running release is
+reported as pending work, without treating it as a failed build.
 
 Only `event=schedule` with its original `created_at` timestamp advances the
 scheduler's clock. A manual check, push-triggered run or retry can confirm release

@@ -126,7 +126,7 @@ def check(api, now, max_age_minutes):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--max-age-minutes", type=int, default=60)
+    parser.add_argument("--max-age-minutes", type=int, default=480)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.max_age_minutes <= 0:
