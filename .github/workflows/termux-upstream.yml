@@ -6,10 +6,19 @@ on:
     paths:
       - ".github/workflows/termux-upstream.yml"
       - "scripts/termux/check_upstream.py"
+      - "scripts/termux/check_release_schedule.py"
       - "scripts/termux/upstream.json"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Termux release updates"]
+    types: [completed]
+  # Observe the release timer even when no release run completes. GitHub may
+  # delay this schedule too; this is a health check, not an independent timer.
+  schedule:
+    - cron: "17 * * * *"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -24,9 +33,24 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: termux/native
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Compare the integrated source with official upstream
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/termux/check_upstream.py
+      - name: Check actual release scheduling and failed jobs
+        if: always() && !cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/termux/check_release_schedule.py
+          --output "${RUNNER_TEMP}/termux-release-schedule.json"
+      - name: Retain the release schedule diagnosis
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: termux-release-schedule
+          path: ${{ runner.temp }}/termux-release-schedule.json
+          if-no-files-found: warn
+          retention-days: 14
