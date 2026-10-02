@@ -128,6 +128,7 @@ async fn websocket_waiting_respects_retry_policy(
             },
         )
         .await;
+    let step_context = StepContext::for_test(turn_context);
     let mut client_session = session.services.model_client.new_session();
     tokio::time::pause();
     super::handle_response_stream_error(
@@ -136,7 +137,7 @@ async fn websocket_waiting_respects_retry_policy(
         error,
         &mut client_session,
         &session,
-        &turn_context,
+        &step_context,
         request,
     )
     .await
@@ -161,6 +162,7 @@ async fn websocket_waiting_honors_server_advice_without_resetting_backoff() {
             },
         )
         .await;
+    let step_context = StepContext::for_test(turn_context);
     let mut client_session = session.services.model_client.new_session();
     let mut retry_state = super::ResponsesStreamRetryState::default();
     tokio::time::pause();
@@ -183,7 +185,7 @@ async fn websocket_waiting_honors_server_advice_without_resetting_backoff() {
             error,
             &mut client_session,
             &session,
-            &turn_context,
+            &step_context,
             ResponsesStreamRequest::Sampling,
         )
         .await
@@ -216,6 +218,7 @@ async fn websocket_waiting_preserves_deadline_across_delayed_notification() {
             },
         )
         .await;
+    let step_context = StepContext::for_test(turn_context);
     std::sync::Arc::get_mut(&mut session)
         .expect("unique test session")
         .realtime_history = Some(Mutex::new(RealtimeHistoryState::default()));
@@ -232,7 +235,7 @@ async fn websocket_waiting_preserves_deadline_across_delayed_notification() {
         CodexErr::Stream("closed".into()).with_retry_after(advice),
         &mut client_session,
         &session,
-        &turn_context,
+        &step_context,
         ResponsesStreamRequest::Sampling,
     );
     tokio::pin!(retry);

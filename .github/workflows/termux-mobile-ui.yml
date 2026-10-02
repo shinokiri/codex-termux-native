@@ -30,6 +30,8 @@ jobs:
       CARGO_BUILD_JOBS: "4"
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: "env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR"
+      # Provider-history integration tests launch the CLI and its app server.
+      CARGO_BIN_EXE_codex: ${{ github.workspace }}/codex-rs/target/debug/codex
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -46,6 +48,11 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.3"
+      - name: Build the CLI used by TUI integration tests
+        working-directory: codex-rs
+        run: |
+          cargo build --locked --profile test -p codex-cli --bin codex
+          test -x "$CARGO_BIN_EXE_codex"
       - name: Verify analytics delivery and TUI behavior
         run: just test --locked -p codex-analytics -p codex-tui -p codex-core-plugins
       - name: Check affected analytics and TUI crates
