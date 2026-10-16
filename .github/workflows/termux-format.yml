@@ -54,6 +54,13 @@ jobs:
           persist-credentials: false
       - name: Test build preparation retries and package contents
         run: python3 -m unittest discover -s scripts/termux -p 'test_*.py' -v
+      - name: Check locked Android dependencies for security advisories
+        uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
+        with:
+          rust-version: 1.95.0
+          manifest-path: ./codex-rs/Cargo.toml
+          arguments: --locked --target aarch64-linux-android
+          command-arguments: advisories
       - name: Test the shared standalone installer
         run: python3 -m unittest discover -s scripts/install -p 'test_install_sh.py' -v
       - name: Format repository
