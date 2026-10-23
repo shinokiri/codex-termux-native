@@ -67,6 +67,7 @@ codex-worktree = { workspace = true }
 codex-utils-approval-presets = { workspace = true }
 codex-uds = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
+codex-utils-file-lock = { workspace = true }
 codex-utils-cli = { workspace = true }
 codex-utils-elapsed = { workspace = true }
 codex-utils-fuzzy-match = { workspace = true }
@@ -174,6 +175,7 @@ arboard = { workspace = true }
 [dev-dependencies]
 app_test_support = { workspace = true }
 codex-mcp = { workspace = true }
+codex-protocol-test-support = { workspace = true }
 core_test_support = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 assert_matches = { workspace = true }

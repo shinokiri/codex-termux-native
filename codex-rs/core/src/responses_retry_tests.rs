@@ -119,11 +119,13 @@ async fn websocket_waiting_respects_retry_policy(
                 if unbounded {
                     config
                         .features
-                        .enable(codex_features::Feature::UnboundedConnectionRetries);
+                        .enable(codex_features::Feature::UnboundedConnectionRetries)
+                        .unwrap();
                 } else {
                     config
                         .features
-                        .disable(codex_features::Feature::UnboundedConnectionRetries);
+                        .disable(codex_features::Feature::UnboundedConnectionRetries)
+                        .unwrap();
                 }
             },
         )
@@ -158,7 +160,8 @@ async fn websocket_waiting_honors_server_advice_without_resetting_backoff() {
                 config.model_provider.supports_websockets = true;
                 config
                     .features
-                    .enable(codex_features::Feature::UnboundedConnectionRetries);
+                    .enable(codex_features::Feature::UnboundedConnectionRetries)
+                    .unwrap();
             },
         )
         .await;
@@ -214,7 +217,8 @@ async fn websocket_waiting_preserves_deadline_across_delayed_notification() {
                 config.model_provider.supports_websockets = true;
                 config
                     .features
-                    .enable(codex_features::Feature::UnboundedConnectionRetries);
+                    .enable(codex_features::Feature::UnboundedConnectionRetries)
+                    .unwrap();
             },
         )
         .await;

@@ -40,9 +40,9 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
         with:
-          toolchain: 1.95.0
+          toolchain: 1.99.1
           components: clippy,rustfmt
           targets: aarch64-linux-android
       - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
@@ -63,6 +63,11 @@ jobs:
         run: just test --locked -p codex-rollout --lib -E 'test(writer_lock::tests::)'
       - name: Test login and gateway OAuth credential locking
         run: just test --locked -p codex-login --lib
+      - name: Test marketplace staging and diagnostic directory locks
+        run: |
+          just test --locked -p codex-core-plugins --lib -E 'test(marketplace_staging)'
+          just test --locked -p codex-state --lib -E 'test(sqlite::tests::)'
+          just test --locked -p codex-state --lib -E 'test(reclamation::tests::)'
       - name: Test existing MCP credential fallback and deletion
         run: >-
           just test --locked -p codex-rmcp-client --lib
@@ -70,6 +75,20 @@ jobs:
           or test(oauth::tests::save_oauth_tokens_writes_fallback_when_keyring_fails)
           or test(oauth::tests::delete_oauth_tokens_removes_all_storage)
           or test(oauth::tests::delete_oauth_tokens_propagates_keyring_errors)'
+      - name: Test desktop MXC policy conversion and Android dependency selection
+        run: |
+          just test --locked -p codex-mxc-sandbox --lib
+          cargo tree --manifest-path codex-rs/Cargo.toml --locked \
+            --target aarch64-linux-android --edges normal \
+            -p codex-mxc-sandbox --prefix none > "${RUNNER_TEMP}/mxc-android-deps.txt"
+          python3 - "${RUNNER_TEMP}/mxc-android-deps.txt" <<'PY'
+          import pathlib
+          import sys
+          lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+          assert not any(line.startswith("mxc-sdk v") for line in lines), (
+              "The Windows MXC SDK must not enter the Android dependency graph."
+          )
+          PY
       - name: Check the device network probe
         working-directory: codex-rs
         run: cargo check --locked -p codex-http-client --example termux_probe

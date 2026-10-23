@@ -21,10 +21,10 @@ else:
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = "aarch64-linux-android"
 API = "29"
-RUST = "1.95.0"
+RUST = "1.99.1"
 NDK = "28.2.13676358"
-V8_VERSION = "150.4.0"
-V8_COMMIT = "5c15a6995c9bb4bacd3e341b59fff32c909c80bf"
+V8_VERSION = "152.2.0"
+V8_COMMIT = "2768994f664e8a6e3aba27503606c58339136e2a"
 # Bump when changing V8 build logic not represented by v8_inputs().
 # Packaging-only edits should not cause another full V8 compilation.
 V8_BUILD_REVISION = 1
@@ -37,7 +37,7 @@ ANDROID_DEPS = {
     ),
     "catapult": (
         "https://chromium.googlesource.com/catapult.git",
-        "2852bb7e91e4995502ffb72b7ed21412ee157914",
+        "74513188f5cd39f9edb16236ea3a49ed5b3cb3c6",
     ),
 }
 
