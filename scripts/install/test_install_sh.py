@@ -376,7 +376,9 @@ class InstallShTest(unittest.TestCase):
             self.assertEqual(first.returncode, 0, first.stderr)
             oldest = releases / f"{versions[0]}-{target}"
             helper = oldest / "bin/codex-code-mode-host"
-            shutil.copy("/bin/sleep", helper)
+            sleep = shutil.which("sleep")
+            self.assertIsNotNone(sleep)
+            shutil.copy(sleep, helper)
             if system.sysname == "Darwin":
                 # A copied macOS system binary cannot run with its platform signature.
                 subprocess.run(
