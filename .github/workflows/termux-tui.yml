@@ -40,9 +40,9 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
         with:
-          toolchain: 1.95.0
+          toolchain: 1.99.1
       - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
         with:
           tool: just@1.51.0,nextest@0.9.143
@@ -63,7 +63,7 @@ jobs:
         run: just test --locked -p codex-cli --test update
       - name: Test daemon lifecycle and Termux package updater startup
         # Package migration tests copy the real CLI several times; bound peak disk use.
-        run: just test --locked -p codex-cli --test app_server_daemon --test-threads=1
+        run: just test --locked -p codex-cli --test app_server_daemon --test app_server_daemon_package --test-threads=1
       - name: Test control socket startup, lock contention and cleanup
         run: just test --locked -p codex-app-server-transport --lib
       - name: Test remote-control preferences and daemon lock contention
