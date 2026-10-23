@@ -27,8 +27,10 @@ is incorporated. Check both official channels without compiling anything:
 python3 scripts/termux/check_upstream.py
 ```
 
-`Termux upstream status` remains a manual diagnostic. The `Termux release
-updates` workflow implements the release pipeline:
+`Termux upstream status` runs periodically and after release workflows, and also
+supports manual diagnostics. It reports new upstream releases and the observed
+release schedule; a successful status check does not mean the new package is
+published. The `Termux release updates` workflow implements the release pipeline:
 
 1. Read the latest published, non-prerelease official release. An unchanged
    release/revision does not start another build.
@@ -100,9 +102,24 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.164.0 integration
+
+The current source baseline is official `rust-v0.164.0`. Android file locking
+follows the relocated provider OAuth storage and covers marketplace staging,
+configured diagnostic directories, mention-selection history and database
+maintenance. The daemon retains upstream's configurable package entrypoint and
+shared socket-binding implementation. Its split package tests remain part of
+the Termux CLI release gate.
+
+The Android build uses Rust 1.99.1 and V8 152.2.0 with matching source and Android
+dependency pins. The existing target-specific binding patch still applies.
+The package updates `ctutils` to 0.4.5 for RUSTSEC-2026-0385; other external
+locked package versions match this upstream release. Termux retains explicit
+package pruning, while the desktop installer keeps upstream's automatic cleanup.
+
 ## Upstream 0.155.0 integration
 
-The source baseline is official `rust-v0.155.0`. Android writer locking now lives
+The 0.155.0 integration used official `rust-v0.155.0`. Android writer locking now lives
 in `codex-rollout`, including the new publication probe; both writer ownership
 and publication coordination use the same Android `flock` adapter. Native CI
 runs the relocated writer-lock regressions before publication.
@@ -383,13 +400,13 @@ must have an identified upstream limitation and retain real error reporting.
 
 ## Android candidate build
 
-`Termux Android source build` uses Ubuntu 26.04, Rust 1.95.0, NDK
+`Termux Android source build` uses Ubuntu 26.04, Rust 1.99.1, NDK
 28.2.13676358 and Android API 29 (Android 10 or newer, ARM64). The SDK inputs
 match the pinned Chromium build files: platform 37.0 and build-tools 37.0.0.
 This SDK choice does not raise the runtime API floor to 37.
 
 V8 starts at upstream `denoland/rusty_v8` commit
-`5c15a6995c9bb4bacd3e341b59fff32c909c80bf`; git submodules and the additional
+`2768994f664e8a6e3aba27503606c58339136e2a`; git submodules and the additional
 Android repositories use exact commits. Our small patch gives V8's final
 bindgen invocation Android target headers. It does not redirect the x64 host
 tools to Android headers. Pointer compression and the V8 sandbox remain enabled.

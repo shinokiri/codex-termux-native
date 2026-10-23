@@ -40,7 +40,10 @@ async fn websocket_disconnects_keep_reconnecting_after_fast_retries() -> Result<
     .await;
     let test = test_codex()
         .with_config(|config| {
-            config.features.enable(Feature::UnboundedConnectionRetries);
+            config
+                .features
+                .enable(Feature::UnboundedConnectionRetries)
+                .unwrap();
             config.model_provider.stream_max_retries = Some(1);
             config.model_provider.request_max_retries = Some(0);
         })

@@ -79,9 +79,11 @@ fn managed_daemon_restarts_from_deleted_working_directory() -> Result<()> {
 #[test]
 fn bootstrap_updater_is_ready_in_deep_codex_home() -> Result<()> {
     let mut daemon = TestDaemon::new()?;
+    // Keep the fixture on the same filesystem when relocating its installed package.
+    let parent = daemon.home.path().parent().context("fixture home parent")?;
     let deep_home = tempfile::Builder::new()
         .prefix(&"deep-codex-home-".repeat(8))
-        .tempdir_in("/tmp")?;
+        .tempdir_in(parent)?;
     for name in ["packages", "app-server-daemon"] {
         std::fs::rename(daemon.home.path().join(name), deep_home.path().join(name))?;
     }
