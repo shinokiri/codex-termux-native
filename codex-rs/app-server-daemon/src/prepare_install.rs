@@ -517,11 +517,7 @@ fn validate_package(root: &Path, entrypoint: &str) -> Result<()> {
         "codex-code-mode-host"
     });
     let code_mode_host = code_mode_host.to_string_lossy();
-    let mut names = vec![
-        "codex-package.json",
-        entrypoint,
-        code_mode_host.as_ref(),
-    ];
+    let mut names = vec!["codex-package.json", entrypoint, code_mode_host.as_ref()];
     // Termux supplies ripgrep through its package manager, outside the CLI package.
     if !cfg!(target_os = "android") {
         names.push(if cfg!(windows) {
