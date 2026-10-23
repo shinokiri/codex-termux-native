@@ -367,7 +367,11 @@ class InstallShTest(unittest.TestCase):
                     target=target,
                 )
                 install_options[version] = dict(
-                    metadata_json=metadata, archive_path=archive, checksum_path=checksum
+                    metadata_json=metadata,
+                    archive_path=archive,
+                    checksum_path=checksum,
+                    force_macos=system.sysname == "Darwin",
+                    machine=system.machine,
                 )
 
             first, _ = run_installer_in(
@@ -417,6 +421,8 @@ class InstallShTest(unittest.TestCase):
                         metadata_json=metadata,
                         archive_path=archive,
                         checksum_path=checksum,
+                        force_macos=system.sysname == "Darwin",
+                        machine=system.machine,
                     )
                     self.assertNotEqual(failed.returncode, 0, failed.stderr)
                     self.assertEqual(history.read_bytes(), before_failure)
@@ -952,6 +958,7 @@ def run_installer_in(
     releases_checksum_path: Path | None = None,
     legacy_archive_path: Path | None = None,
     force_macos: bool = False,
+    machine: str = "arm64",
     platform: str | None = None,
     use_mirror: bool | None = False,
     releases_mode: str = "",
@@ -1070,7 +1077,7 @@ def run_installer_in(
         'case "$1" in\n'
         f"  -s) printf '{system}\\n' ;;\n"
         f"  -o) printf '{operating_system}\\n' ;;\n"
-        "  -m) printf 'arm64\\n' ;;\n"
+        f"  -m) printf '%s\\n' {shlex.quote(machine)} ;;\n"
         "esac\n",
     )
     if platform == "android" and not (bin_dir / "ps").exists():
