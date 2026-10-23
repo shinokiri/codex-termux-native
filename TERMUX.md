@@ -111,6 +111,11 @@ maintenance. The daemon retains upstream's configurable package entrypoint and
 shared socket-binding implementation. Its split package tests remain part of
 the Termux CLI release gate.
 
+The Windows MXC SDK is excluded from Android dependencies because its engine
+dispatch requires desktop-only modules. Android continues to report MXC as
+unavailable and rejects its launcher. Native CI runs the existing desktop policy
+conversion tests and checks that the Android dependency graph excludes the SDK.
+
 The Android build uses Rust 1.99.1 and V8 152.2.0 with matching source and Android
 dependency pins. The existing target-specific binding patch still applies.
 The package updates `ctutils` to 0.4.5 for RUSTSEC-2026-0385; other external
