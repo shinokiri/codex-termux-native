@@ -66,7 +66,8 @@ jobs:
       - name: Test marketplace staging and diagnostic directory locks
         run: |
           just test --locked -p codex-core-plugins --lib -E 'test(marketplace_staging)'
-          just test --locked -p codex-state --lib -E 'test(sqlite_tests::) or test(reclamation::tests::)'
+          just test --locked -p codex-state --lib -E 'test(sqlite::tests::)'
+          just test --locked -p codex-state --lib -E 'test(reclamation::tests::)'
       - name: Test existing MCP credential fallback and deletion
         run: >-
           just test --locked -p codex-rmcp-client --lib
