@@ -140,7 +140,7 @@ async fn memory_import_retries_after_consolidation_without_partial_dual_write() 
             .read(true)
             .write(true)
             .open(lock_path)?;
-        lock.lock()?;
+        codex_utils_file_lock::lock(&lock)?;
         Ok(())
     })
     .await??;

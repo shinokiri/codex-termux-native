@@ -102,9 +102,32 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.165.0 integration
+
+The current source baseline is official `rust-v0.165.0`. The existing Android
+patches apply to this release, including the Rust 1.99.1 and V8 152.2.0 recipe.
+Upstream replaces the old MCP OAuth credential helpers with scoped credential
+stores. The native gate now runs the OAuth module's tests, covering credential
+caching, fallback and store locking, instead of selecting removed test names.
+New marketplace and external-memory test fixtures also use the Android lock
+adapter, matching the production lock calls they coordinate with.
+
+Zstandard is updated to `zstd` 0.14.3, `zstd-safe` 8.2.0 and `zstd-sys` 2.1.2.
+`zip` 9.1.3 uses the same corrected Zstandard stack while retaining the port's
+explicit archive features and bzip2 backend. This addresses RUSTSEC-2026-0391,
+RUSTSEC-2026-0398, RUSTSEC-2026-0403 and RUSTSEC-2026-0410 through dependency
+updates. The release gate also exercises protocol export and feedback archives.
+
+For RUSTSEC-2026-0387, the port backports the reviewed exception from
+[official PR #57206](https://github.com/openai/codex/pull/57206) to both audit
+configurations. `crypto-bigint` 0.5.5 remains required through `elliptic-curve`
+0.13.8 by age, AWS login, user verification and WebRTC. This exception does not
+fix the potential timing leakage in private-key or session-secret operations.
+Remove it when all those dependency paths use `crypto-bigint` 0.7.6 or later.
+
 ## Upstream 0.164.0 integration
 
-The current source baseline is official `rust-v0.164.0`. Android file locking
+The 0.164.0 integration used official `rust-v0.164.0`. Android file locking
 follows the relocated provider OAuth storage and covers marketplace staging,
 configured diagnostic directories, mention-selection history and database
 maintenance. The daemon retains upstream's configurable package entrypoint and

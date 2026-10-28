@@ -29,7 +29,7 @@ concurrency:
 jobs:
   file-locks:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       # Scrub at the test-process boundary: Cargo/nextest may set SSL_CERT_FILE
@@ -68,13 +68,9 @@ jobs:
           just test --locked -p codex-core-plugins --lib -E 'test(marketplace_staging)'
           just test --locked -p codex-state --lib -E 'test(sqlite::tests::)'
           just test --locked -p codex-state --lib -E 'test(reclamation::tests::)'
-      - name: Test existing MCP credential fallback and deletion
-        run: >-
-          just test --locked -p codex-rmcp-client --lib
-          -E 'test(oauth::tests::load_oauth_tokens_falls_back_when_missing_in_keyring)
-          or test(oauth::tests::save_oauth_tokens_writes_fallback_when_keyring_fails)
-          or test(oauth::tests::delete_oauth_tokens_removes_all_storage)
-          or test(oauth::tests::delete_oauth_tokens_propagates_keyring_errors)'
+      - name: Test MCP OAuth credential caching, fallback and store locking
+        # Upstream 0.165 replaces the four old credential helpers with scoped stores.
+        run: just test --locked -p codex-rmcp-client --lib -E 'test(oauth::)'
       - name: Test desktop MXC policy conversion and Android dependency selection
         run: |
           just test --locked -p codex-mxc-sandbox --lib

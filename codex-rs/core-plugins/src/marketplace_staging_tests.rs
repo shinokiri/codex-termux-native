@@ -110,8 +110,8 @@ fn cleanup_reclaims_unpublished_and_aged_legacy_clones() -> Result<()> {
         // Wait for both locks and explicitly release them before cleanup.
         for name in [CLEANUP_LOCK, COORDINATION_LOCK] {
             let lock = open_lock(&home.path().join(name))?;
-            lock.lock()?;
-            lock.unlock()?;
+            codex_utils_file_lock::lock(&lock)?;
+            codex_utils_file_lock::unlock(&lock)?;
         }
         remove_stale_staging_dirs(home.path(), now + age)?;
         assert!(!unpublished.exists());
