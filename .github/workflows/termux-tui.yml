@@ -66,6 +66,8 @@ jobs:
         run: just test --locked -p codex-cli --test app_server_daemon --test app_server_daemon_package --test-threads=1
       - name: Test control socket startup, lock contention and cleanup
         run: just test --locked -p codex-app-server-transport --lib
+      - name: Test compressed protocol exports and feedback archives
+        run: just test --locked -p codex-app-server-protocol -p codex-feedback --lib
       - name: Test remote-control preferences and daemon lock contention
         run: just test --locked -p codex-app-server --lib -E 'test(remote_control_processor_tests::)'
       - name: Check update-channel helpers with Clippy
