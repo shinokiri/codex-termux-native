@@ -60,7 +60,10 @@ jobs:
         run: |
           env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR just test --locked -p codex-utils-file-lock -p codex-utils-process -p codex-http-client -p codex-websocket-client -p codex-shell-command -p codex-keyring-store -p codex-uds
       - name: Test relocated thread writer locks and publication coordination
-        run: just test --locked -p codex-rollout --lib -E 'test(writer_lock::tests::)'
+        run: just test --locked -p codex-rollout --lib -E 'test(writer_lock::tests::) or test(maintenance::tests::) or test(session_index::tests::)'
+      - name: Test Git baseline serialization
+        run: |
+          just test --locked -p codex-git-utils --lib -E 'test(baseline::)'
       - name: Test login and gateway OAuth credential locking
         run: just test --locked -p codex-login --lib
       - name: Test marketplace staging and diagnostic directory locks

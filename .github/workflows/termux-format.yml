@@ -22,7 +22,7 @@ concurrency:
 jobs:
   format:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -58,6 +58,9 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
         with:
           rust-version: 1.99.1
+          # Match the release jobs when fetching upstream's Git V8 dependency.
+          use-git-cli: true
+          log-level: info
           manifest-path: ./codex-rs/Cargo.toml
           arguments: --locked --target aarch64-linux-android
           command-arguments: advisories

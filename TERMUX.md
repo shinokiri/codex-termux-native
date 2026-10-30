@@ -102,9 +102,37 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.166.0 integration
+
+The current source baseline is official `rust-v0.166.0`. Android retains the
+Rust 1.99.1 and V8 152.2.0 build recipe. The upstream Bazel V8 changes remain in
+the source tree; the Android package continues to use its verified NDK build.
+
+The relocated NFS migration lock, cross-process session index lock and Git
+baseline lock use the Android file-lock adapter. Rollout maintenance explicitly
+unlocks on guard destruction, and writer coordination retains upstream's
+30-second timeout. The release gates exercise these paths alongside daemon
+lifecycle, WebSocket recovery and installer regressions.
+
+The package now includes the upstream standalone `codex-exec-server` executable
+and advertises it through `execServer` in the package manifest. The installer
+checks advertised executors while accepting older packages without this field.
+The Android smoke check also runs the standalone executor's version entry point.
+The executor regression stages a package manifest before checking its runtime
+version: unpackaged source builds intentionally report `0.0.0`. Rust 1.99.1
+Clippy corrections and the halfwidth sound-mark debug snapshot are retained;
+the snapshot's rendered cells, styles and grapheme-boundary checks are unchanged.
+
+Code Mode now compresses gRPC responses with Zstandard. `tonic` is updated to
+0.14.9 so this new path uses the corrected `zstd` 0.14.3 stack already used by
+archive handling. The four compression-advisory exceptions in upstream 0.166.0
+are unnecessary once the locked graph contains only these corrected versions.
+The previously documented crypto-bigint exception remains until its legacy
+elliptic-curve dependency paths can be upgraded.
+
 ## Upstream 0.165.0 integration
 
-The current source baseline is official `rust-v0.165.0`. The existing Android
+The 0.165.0 integration used official `rust-v0.165.0`. The existing Android
 patches apply to this release, including the Rust 1.99.1 and V8 152.2.0 recipe.
 Upstream replaces the old MCP OAuth credential helpers with scoped credential
 stores. The native gate now runs the OAuth module's tests, covering credential

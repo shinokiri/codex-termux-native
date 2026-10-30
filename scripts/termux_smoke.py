@@ -230,12 +230,18 @@ async def check(args):
         await command(
             binary_dir / "codex", "--version", directory=directory, timeout=10
         )
+        await command(
+            binary_dir / "codex-exec-server",
+            "--version",
+            directory=directory,
+            timeout=10,
+        )
         await app_server(binary_dir / "codex", args.candidate.resolve())
         await asyncio.wait_for(
             code_mode(binary_dir / "codex-code-mode-host", directory), 45
         )
         print(
-            "PASS: CLI, protected Unix socket, JavaScript, Promise, cross-cell state, host shutdown",
+            "PASS: CLI, standalone executor, protected Unix socket, JavaScript, Promise, cross-cell state, host shutdown",
             flush=True,
         )
         if args.network:

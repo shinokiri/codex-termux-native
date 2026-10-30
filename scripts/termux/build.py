@@ -364,11 +364,15 @@ def build_codex(args):
             "-p",
             "codex-code-mode-host",
             "-p",
+            "codex-exec-server-cli",
+            "-p",
             "codex-http-client",
             "--bin",
             "codex",
             "--bin",
             "codex-code-mode-host",
+            "--bin",
+            "codex-exec-server",
             "--example",
             "termux_probe",
         ],
@@ -394,7 +398,12 @@ def package(args):
     release = args.work_dir / "codex-target" / TARGET / "release"
     readelf = args.toolchain / "bin/llvm-readelf"
     needed_libraries = set()
-    for name in ("codex", "codex-code-mode-host", "examples/termux_probe"):
+    for name in (
+        "codex",
+        "codex-code-mode-host",
+        "codex-exec-server",
+        "examples/termux_probe",
+    ):
         binary = release / name
         description = output(
             [readelf, "--file-header", "--program-headers", "--dynamic", binary]
@@ -443,6 +452,7 @@ def package(args):
                 "version": identity["package_version"],
                 "target": TARGET,
                 "entrypoint": "bin/codex",
+                "execServer": "bin/codex-exec-server",
             },
             indent=2,
         )

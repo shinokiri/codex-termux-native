@@ -60,12 +60,14 @@ jobs:
           # Keep the same build targets and features; fail if no popup tests run.
           just test "${test_args[@]}" -E 'test(update_prompt::tests::)'
       - name: Test the update command entry point
-        run: just test --locked -p codex-cli --test update
+        run: just test --locked -p codex-cli --test update --test migrate_nfs_db
       - name: Test daemon lifecycle and Termux package updater startup
         # Package migration tests copy the real CLI several times; bound peak disk use.
         run: just test --locked -p codex-cli --test app_server_daemon --test app_server_daemon_package --test-threads=1
       - name: Test control socket startup, lock contention and cleanup
         run: just test --locked -p codex-app-server-transport --lib
+      - name: Test the standalone executor entry point
+        run: just test --locked -p codex-exec-server-cli
       - name: Test compressed protocol exports and feedback archives
         run: just test --locked -p codex-app-server-protocol -p codex-feedback --lib
       - name: Test remote-control preferences and daemon lock contention
