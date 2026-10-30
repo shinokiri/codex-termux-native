@@ -77,6 +77,8 @@ use tempfile::TempDir;
 use tracing::Instrument;
 use tracing_test::traced_test;
 
+#[path = "client_websockets_runtime_auth.rs"]
+mod runtime_auth_tests;
 #[path = "client_websockets_recovery.rs"]
 mod recovery;
 
@@ -2736,6 +2738,9 @@ fn websocket_provider_with_connect_timeout(
         supports_websockets: true,
         supports_standalone_web_search: false,
         capabilities: None,
+        project_id: None,
+        location: None,
+        credential_file: None,
         include_internal_metadata: false,
     }
 }
@@ -2864,6 +2869,17 @@ async fn websocket_harness_with_provider_options_and_auth(
     .with_metrics(metrics);
     let effort = None;
     let summary = ReasoningSummary::Auto;
+    let _gateway = provider.gateway_oauth.as_ref().map(|_| {
+        codex_model_provider::test_support::seed_gateway_auth(
+            &provider,
+            &auth_manager,
+            serde_json::json!({
+                "access_token": "gateway-token",
+                "refresh_token": "refresh-token",
+                "expires_at": i64::MAX,
+            }),
+        )
+    });
     let client = ModelClient::new(
         client_auth_manager,
         AgentIdentityAuthPolicy::JwtOnly,

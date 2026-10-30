@@ -170,7 +170,9 @@ class PackageTest(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content)
         release = self.args.work_dir / "codex-target" / build.TARGET / "release"
-        for name in ("codex", "codex-code-mode-host", "examples/termux_probe"):
+        for name in (
+            "codex", "codex-code-mode-host", "codex-exec-server", "examples/termux_probe"
+        ):
             binary = release / name
             binary.parent.mkdir(parents=True, exist_ok=True)
             binary.write_bytes(name.encode())
@@ -245,6 +247,9 @@ class PackageTest(unittest.TestCase):
         with tarfile.open(archive_path) as archive:
             self.assertIn("bin/codex", archive.getnames())
             self.assertIn("bin/codex-code-mode-host", archive.getnames())
+            self.assertIn("bin/codex-exec-server", archive.getnames())
+            package_manifest = json.load(archive.extractfile("codex-package.json"))
+            self.assertEqual(package_manifest["execServer"], "bin/codex-exec-server")
             self.assertIn("codex-package.json", archive.getnames())
             self.assertNotIn("codex-termux-native/bin/codex", archive.getnames())
         self.assertEqual(

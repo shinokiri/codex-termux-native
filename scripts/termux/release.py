@@ -178,7 +178,12 @@ def verified_package(directory, version, commit):
             raise RuntimeError(
                 "Release identity does not match the source that passed CI"
             )
-        for binary in ("bin/codex", "bin/codex-code-mode-host"):
+        binaries = ["bin/codex", "bin/codex-code-mode-host"]
+        if "execServer" in manifest:
+            if manifest["execServer"] != "bin/codex-exec-server":
+                raise RuntimeError("Unexpected standalone executor path")
+            binaries.append(manifest["execServer"])
+        for binary in binaries:
             if not archive.getmember(binary).isfile():
                 raise RuntimeError(f"Missing release executable: {binary}")
     for name in ASSETS:
