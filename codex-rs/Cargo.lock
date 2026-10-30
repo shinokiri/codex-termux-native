@@ -2559,7 +2559,6 @@ dependencies = [
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
  "codex-utils-cli",
- "codex-utils-file-lock",
  "codex-utils-path",
  "codex-utils-path-uri",
  "codex-utils-process",

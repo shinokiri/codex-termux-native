@@ -79,7 +79,6 @@ codex-terminal-detection = { workspace = true }
 codex-thread-store = { workspace = true }
 codex-tui = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
-codex-utils-file-lock = { workspace = true }
 codex-utils-path = { workspace = true }
 codex-utils-path-uri = { workspace = true }
 codex-utils-redacted-string = { workspace = true }
