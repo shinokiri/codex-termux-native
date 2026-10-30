@@ -24,8 +24,19 @@ use tokio::io::BufReader;
 
 #[tokio::test]
 async fn standalone_initializes_reports_version_and_runs_helpers() -> anyhow::Result<()> {
-    let binary = cargo_bin("codex-exec-server")?;
+    let built_binary = cargo_bin("codex-exec-server")?;
     let directory = tempfile::tempdir()?;
+    // Runtime release versions come from package metadata. An unpackaged Cargo
+    // binary intentionally reports 0.0.0 through the executor protocol.
+    let package = directory.path().join("package");
+    let bin = package.join("bin");
+    std::fs::create_dir_all(&bin)?;
+    let binary = bin.join(built_binary.file_name().context("executor binary name")?);
+    std::fs::copy(&built_binary, &binary)?;
+    std::fs::write(
+        package.join("codex-package.json"),
+        json!({"layoutVersion": 1, "version": env!("CARGO_PKG_VERSION")}).to_string(),
+    )?;
     let cwd = url::Url::from_directory_path(directory.path())
         .map_err(|()| anyhow::anyhow!("file URI"))?;
     let version = tokio::process::Command::from(background_command(&binary))

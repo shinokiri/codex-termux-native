@@ -118,6 +118,10 @@ The package now includes the upstream standalone `codex-exec-server` executable
 and advertises it through `execServer` in the package manifest. The installer
 checks advertised executors while accepting older packages without this field.
 The Android smoke check also runs the standalone executor's version entry point.
+The executor regression stages a package manifest before checking its runtime
+version: unpackaged source builds intentionally report `0.0.0`. Rust 1.99.1
+Clippy corrections and the halfwidth sound-mark debug snapshot are retained;
+the snapshot's rendered cells, styles and grapheme-boundary checks are unchanged.
 
 Code Mode now compresses gRPC responses with Zstandard. `tonic` is updated to
 0.14.9 so this new path uses the corrected `zstd` 0.14.3 stack already used by
@@ -128,7 +132,7 @@ elliptic-curve dependency paths can be upgraded.
 
 ## Upstream 0.165.0 integration
 
-The current source baseline is official `rust-v0.165.0`. The existing Android
+The 0.165.0 integration used official `rust-v0.165.0`. The existing Android
 patches apply to this release, including the Rust 1.99.1 and V8 152.2.0 recipe.
 Upstream replaces the old MCP OAuth credential helpers with scoped credential
 stores. The native gate now runs the OAuth module's tests, covering credential
