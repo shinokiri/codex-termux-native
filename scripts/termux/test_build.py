@@ -171,7 +171,10 @@ class PackageTest(unittest.TestCase):
             path.write_bytes(content)
         release = self.args.work_dir / "codex-target" / build.TARGET / "release"
         for name in (
-            "codex", "codex-code-mode-host", "codex-exec-server", "examples/termux_probe"
+            "codex",
+            "codex-code-mode-host",
+            "codex-exec-server",
+            "examples/termux_probe",
         ):
             binary = release / name
             binary.parent.mkdir(parents=True, exist_ok=True)

@@ -231,7 +231,10 @@ async def check(args):
             binary_dir / "codex", "--version", directory=directory, timeout=10
         )
         await command(
-            binary_dir / "codex-exec-server", "--version", directory=directory, timeout=10
+            binary_dir / "codex-exec-server",
+            "--version",
+            directory=directory,
+            timeout=10,
         )
         await app_server(binary_dir / "codex", args.candidate.resolve())
         await asyncio.wait_for(

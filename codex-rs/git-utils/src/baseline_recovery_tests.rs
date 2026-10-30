@@ -58,7 +58,10 @@ async fn concurrent_operations_share_the_workspace_lock() -> Result<()> {
         .read(true)
         .write(true)
         .open(baseline_control(root).join("codex-baseline.lock"))?;
-    let contended = matches!(codex_utils_file_lock::try_lock(&lock), Err(fs::TryLockError::WouldBlock));
+    let contended = matches!(
+        codex_utils_file_lock::try_lock(&lock),
+        Err(fs::TryLockError::WouldBlock)
+    );
     drop(lock);
 
     let reset = reset_git_repository(root);

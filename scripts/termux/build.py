@@ -399,7 +399,10 @@ def package(args):
     readelf = args.toolchain / "bin/llvm-readelf"
     needed_libraries = set()
     for name in (
-        "codex", "codex-code-mode-host", "codex-exec-server", "examples/termux_probe"
+        "codex",
+        "codex-code-mode-host",
+        "codex-exec-server",
+        "examples/termux_probe",
     ):
         binary = release / name
         description = output(
