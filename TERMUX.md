@@ -122,10 +122,10 @@ updated to 9.4.1, retaining its explicit archive features and bzip2 backend.
 advisory exception. Cargo and Bazel locks are regenerated together. The existing
 crypto-bigint exception described below remains unresolved.
 
-The installer retention fixture resolves `sleep` through PATH and sets its
-original program name when executing the copied helper. This supports multicall
-coreutils while still checking that a live executable in an old release prevents
-that release from being pruned.
+The installer retention fixture compiles a small native process instead of
+renaming a system utility. This avoids multicall coreutils dispatch while still
+checking that live and late-starting executables in an old release prevent that
+release from being pruned.
 
 ## Upstream 0.166.0 integration
 
