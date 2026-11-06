@@ -122,6 +122,11 @@ updated to 9.4.1, retaining its explicit archive features and bzip2 backend.
 advisory exception. Cargo and Bazel locks are regenerated together. The existing
 crypto-bigint exception described below remains unresolved.
 
+The installer retention fixture resolves `sleep` through PATH and sets its
+original program name when executing the copied helper. This supports multicall
+coreutils while still checking that a live executable in an old release prevents
+that release from being pruned.
+
 ## Upstream 0.166.0 integration
 
 The 0.166.0 integration used official `rust-v0.166.0`. Android retains the
