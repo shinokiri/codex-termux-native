@@ -102,9 +102,29 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.167.0 integration
+
+The current source baseline is official `rust-v0.167.0`. The integration retains
+upstream's agent command center, backend switching and draft preservation,
+provider-independent history, image thumbnails, network-approval cleanup and
+bounded Code Mode output. Package updates retain upstream's Unix working-directory
+isolation. The Android build continues to use Rust 1.99.1 and the verified
+V8 152.2.0 C++ archive and bindings.
+
+The new credential commit sidecar lock uses the existing Android file-lock
+adapter, preserving upstream's compare-and-save serialization and five-second
+wait bound. Network-approval regression fixtures use the same adapter. The
+upstream TLS error-chain implementation supersedes the port's equivalent fix.
+
+The corrected `tonic` 0.14.9 and Zstandard dependency stack remain. `zip` is
+updated to 9.4.1, retaining its explicit archive features and bzip2 backend.
+`libz-sys` is updated to 1.1.31, addressing RUSTSEC-2026-0418 without adding an
+advisory exception. Cargo and Bazel locks are regenerated together. The existing
+crypto-bigint exception described below remains unresolved.
+
 ## Upstream 0.166.0 integration
 
-The current source baseline is official `rust-v0.166.0`. Android retains the
+The 0.166.0 integration used official `rust-v0.166.0`. Android retains the
 Rust 1.99.1 and V8 152.2.0 build recipe. The upstream Bazel V8 changes remain in
 the source tree; the Android package continues to use its verified NDK build.
 
