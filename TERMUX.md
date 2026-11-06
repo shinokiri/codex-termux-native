@@ -121,6 +121,11 @@ updated to 9.4.1, retaining its explicit archive features and bzip2 backend.
 `libz-sys` is updated to 1.1.31, addressing RUSTSEC-2026-0418 without adding an
 advisory exception. Cargo and Bazel locks are regenerated together. The existing
 crypto-bigint exception described below remains unresolved.
+The port also backports the reviewed unmaintained-dependency exception from
+[official PR #59638](https://github.com/openai/codex/pull/59638) for
+RUSTSEC-2026-0441. `pin-utils` remains transitive through AWS Smithy and
+`loom` under `tokio-graceful`; the advisory lists no patched release. Remove
+this exception when those dependency paths drop `pin-utils`.
 
 The installer retention fixture compiles a small native process instead of
 renaming a system utility. This avoids multicall coreutils dispatch while still
