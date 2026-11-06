@@ -218,6 +218,18 @@ async fn cli_fork_omits_implicit_model_and_effort() -> Result<()> {
     Ok(())
 }
 
+// These tests drop startup with thread/start still in flight. Its recorder
+// can still be waiting for a reply after the request assertions have passed.
+async fn stop_interrupted_startup_recorder(
+    proxy: tokio::task::JoinHandle<Result<()>>,
+) -> Result<()> {
+    proxy.abort();
+    match tokio::time::timeout(Duration::from_secs(15), proxy).await? {
+        Err(error) if error.is_cancelled() => Ok(()),
+        result => result?,
+    }
+}
+
 async fn run_until_thread_start(
     server: AppServerSession,
     config: Config,
@@ -680,6 +692,66 @@ async fn fresh_startup_reads_destination_and_cleared_model_uses_catalog() -> Res
 }
 
 #[tokio::test]
+async fn fresh_startup_observes_config_edits_after_directory_trust() -> Result<()> {
+    let home = tempdir()?;
+    let destination = tempdir()?;
+    std::fs::create_dir(destination.path().join(".git"))?;
+    let config_path = home.path().join("config.toml");
+    let project = serde_json::to_string(&destination.path().display().to_string())?;
+    let write_tier = |tier: &str| {
+        std::fs::write(
+            &config_path,
+            format!("service_tier = \"{tier}\"\n[projects.{project}]\ntrust_level = \"trusted\"\n"),
+        )
+    };
+    write_tier("priority")?;
+    let config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .harness_overrides(ConfigOverrides {
+            cwd: Some(destination.path().to_path_buf()),
+            ..Default::default()
+        })
+        .build()
+        .await?;
+    let (mut server, requests, proxy) = start_recording_app_server_with_history(
+        &config,
+        HistoryCapabilities::Current,
+        /*blocked_thread_list*/ None,
+        /*failed_thread_name*/ None,
+        crate::app_server_session::ThreadParamsMode::Embedded,
+        LoaderOverrides {
+            user_config_path: Some(config_path.clone().abs()),
+            ..LoaderOverrides::default()
+        },
+    )
+    .await?;
+    let bootstrap = server.bootstrap(&config).await?;
+    let reads_before = recorded_params(&requests, "config/read").len();
+    let trust = crate::config_update::read_remote_project_trust(
+        server.request_handle(),
+        config.cwd.as_path(),
+        crate::config_update::ProjectTrustHost::Local,
+    )
+    .await?;
+    assert_eq!(trust, None);
+    // A different process can edit this file even when the app server is embedded.
+    write_tier("flex")?;
+    run_until_thread_start(server, config, bootstrap, &requests).await?;
+    let starts = recorded_params(&requests, "thread/start");
+    assert_eq!(
+        (
+            starts.len(),
+            &starts[0]["serviceTier"],
+            recorded_params(&requests, "config/read").len() - reads_before,
+        ),
+        (1, &serde_json::json!("flex"), 2),
+    );
+    proxy.abort();
+    Ok(())
+}
+
+#[tokio::test]
 async fn fresh_startup_falls_back_only_for_unsupported_config_read() -> Result<()> {
     for capabilities in [
         HistoryCapabilities::ConfigReadUnsupported(-32601),
@@ -715,7 +787,7 @@ async fn fresh_startup_falls_back_only_for_unsupported_config_read() -> Result<(
             ),
             (&serde_json::Value::Null, &serde_json::Value::Null)
         );
-        tokio::time::timeout(Duration::from_secs(/*secs*/ 15), proxy).await???;
+        stop_interrupted_startup_recorder(proxy).await?;
     }
     Ok(())
 }
@@ -781,7 +853,7 @@ async fn startup_reads_server_defaults_before_starting_thread() -> Result<()> {
         ),
         (&serde_json::Value::Null, &serde_json::Value::Null),
     );
-    tokio::time::timeout(Duration::from_secs(/*secs*/ 15), proxy).await???;
+    stop_interrupted_startup_recorder(proxy).await?;
     Ok(())
 }
 
