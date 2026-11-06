@@ -132,6 +132,13 @@ renaming a system utility. This avoids multicall coreutils dispatch while still
 checking that live and late-starting executables in an old release prevent that
 release from being pruned.
 
+Startup regression fixtures backport the recorder cleanup from
+[official PR #59369](https://github.com/openai/codex/pull/59369). Tests that
+intentionally interrupt an in-flight startup cancel and await their recorder,
+retaining the request assertions and bounded cleanup. The Unix updater test
+also passes the fork's explicit pruning argument while retaining upstream's
+working-directory isolation assertions.
+
 ## Upstream 0.166.0 integration
 
 The 0.166.0 integration used official `rust-v0.166.0`. Android retains the

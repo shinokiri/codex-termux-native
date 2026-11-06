@@ -9,7 +9,11 @@ use std::os::unix::fs::PermissionsExt;
 fn package_update_runs_outside_the_project() -> anyhow::Result<()> {
     const CHILD: &str = "CODEX_TEST_PACKAGE_UPDATE_CHILD";
     if std::env::var_os(CHILD).is_some() {
-        return run_update_action(UpdateAction::PnpmGlobalLatest, /*cli_executable*/ None);
+        return run_update_action(
+            UpdateAction::PnpmGlobalLatest,
+            /*cli_executable*/ None,
+            /*prune*/ false,
+        );
     }
 
     let project = tempfile::tempdir()?;
