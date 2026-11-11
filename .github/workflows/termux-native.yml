@@ -69,8 +69,8 @@ jobs:
       - name: Test marketplace staging and diagnostic directory locks
         run: |
           just test --locked -p codex-core-plugins --lib -E 'test(marketplace_staging)'
-          just test --locked -p codex-state --lib -E 'test(sqlite::tests::)'
-          just test --locked -p codex-state --lib -E 'test(reclamation::tests::)'
+      - name: Test state database migrations, WAL recovery and directory locks
+        run: just test --locked -p codex-state --lib
       - name: Test MCP OAuth credential caching, fallback and store locking
         # Upstream 0.165 replaces the four old credential helpers with scoped stores.
         run: just test --locked -p codex-rmcp-client --lib -E 'test(oauth::)'

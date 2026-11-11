@@ -37,6 +37,7 @@ jobs:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: "env -u CODEX_CA_CERTIFICATE -u SSL_CERT_FILE -u SSL_CERT_DIR"
       # The assert_cmd fallback sees the runner's `env` command instead of the host.
       CARGO_BIN_EXE_codex_code_mode_host: ${{ github.workspace }}/codex-rs/target/debug/codex-code-mode-host
+      CARGO_BIN_EXE_test_stdio_server: ${{ github.workspace }}/codex-rs/target/debug/test_stdio_server
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -60,6 +61,11 @@ jobs:
         run: |
           cargo build --locked --profile test -p codex-code-mode-host --bin codex-code-mode-host
           test -x "$CARGO_BIN_EXE_codex_code_mode_host"
+      - name: Build the MCP fixture used by incremental tool scenarios
+        working-directory: codex-rs
+        run: |
+          cargo build --locked --profile test -p codex-rmcp-client --bin test_stdio_server
+          test -x "$CARGO_BIN_EXE_test_stdio_server"
       - name: Test transport recovery and existing retry behavior
         run: >-
           just test --locked -p codex-core --lib --test all
@@ -70,6 +76,12 @@ jobs:
         run: >-
           just test --locked -p codex-core --lib --test all
           -E 'test(websocket_recovery::)'
+      - name: Require incremental tool declarations, compaction and resume scenarios
+        run: >-
+          just test --locked -p codex-core --lib --test all
+          -E 'test(scenarios::incremental_tools::)
+          or test(scenarios::incremental_tools_resume::)
+          or test(base_instructions::catalog_and_model_changes_preserve_the_window_base)'
       - name: Check the affected crate with Clippy
         run: just fix -p codex-core --locked --lib
       - name: Check generated changes
