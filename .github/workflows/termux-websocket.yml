@@ -70,6 +70,12 @@ jobs:
         run: >-
           just test --locked -p codex-core --lib --test all
           -E 'test(websocket_recovery::)'
+      - name: Require incremental tool declarations, compaction and resume scenarios
+        run: >-
+          just test --locked -p codex-core --lib --test all
+          -E 'test(scenarios::incremental_tools::)
+          or test(scenarios::incremental_tools_resume::)
+          or test(base_instructions::catalog_and_model_changes_preserve_the_window_base)'
       - name: Check the affected crate with Clippy
         run: just fix -p codex-core --locked --lib
       - name: Check generated changes
