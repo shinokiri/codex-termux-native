@@ -1,0 +1,62 @@
+name: Resolve Termux 0.167.1 security dependency locks
+
+on:
+  push:
+    branches: ["maintenance/dependencies-0.167.1"]
+    paths: [".github/workflows/termux-dependency-refresh.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8
+        with:
+          toolchain: 1.99.1
+          components: rustfmt
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
+        with:
+          tool: just@1.51.0
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86
+        with:
+          bazelisk-version: 1.28.1
+      - uses: facebook/install-dotslash@1e4e7b3e07eaca387acb98f1d4720e0bee8dbb6a
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.3"
+      - name: Resolve the upstream SQLite and OpenSSL security fixes
+        working-directory: codex-rs
+        run: |
+          cargo update -p libsqlite3-sys --precise 0.39.1
+          cargo update -p openssl --precise 0.10.82
+          cargo update -p openssl-sys --precise 0.9.118
+          cargo metadata --locked --no-deps --format-version 1 > "${RUNNER_TEMP}/workspace-metadata.json"
+      - name: Refresh the corresponding Bazel lock
+        run: just bazel-lock-update
+      - name: Format the integrated source
+        run: just fmt
+      - name: Verify and retain the generated lockfile changes
+        run: |
+          python3 .github/scripts/verify_cargo_workspace_manifests.py
+          git diff --check
+          git diff --binary > "${RUNNER_TEMP}/termux-dependency-locks.patch"
+          git rev-parse HEAD > "${RUNNER_TEMP}/source-ref.txt"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        if: always()
+        with:
+          name: termux-dependency-locks
+          path: |
+            ${{ runner.temp }}/termux-dependency-locks.patch
+            ${{ runner.temp }}/source-ref.txt
+            ${{ runner.temp }}/workspace-metadata.json
+          if-no-files-found: error
+          retention-days: 7
+
