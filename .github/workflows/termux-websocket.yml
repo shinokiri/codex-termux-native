@@ -82,6 +82,10 @@ jobs:
           -E 'test(scenarios::incremental_tools::)
           or test(scenarios::incremental_tools_resume::)
           or test(base_instructions::catalog_and_model_changes_preserve_the_window_base)'
+      - name: Require Vertex authentication, tool declarations and provider compaction
+        run: |
+          just test --locked -p codex-core --lib --test all -E 'test(gcp::)'
+          just test --locked -p codex-core --lib --test all -E 'test(compact_remote::provider_automatic_compaction_uses_v2_responses_endpoint)'
       - name: Check the affected crate with Clippy
         run: just fix -p codex-core --locked --lib
       - name: Check generated changes
