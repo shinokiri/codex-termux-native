@@ -10,6 +10,13 @@ ignore = [
     "RUSTSEC-2025-0141", # bincode via syntect; remove when syntect drops or updates it
     "RUSTSEC-2026-0118", # hickory-proto via rama-dns/rama-tcp; remove when rama updates to hickory 0.26.1 or hickory-net
     "RUSTSEC-2026-0119", # hickory-proto via rama-dns/rama-tcp; remove when rama updates to hickory 0.26.1 or hickory-net
+    # Reviewed 2026-11-11, following openai/codex#60872. These remain unfixed.
+    # Android already uses Rust 1.99.1; Rama 0.3.0-alpha.4 still requires Hickory 0.25.
+    # Remove after the Rama dependency graph uses hickory-proto >=0.26.2.
+    "RUSTSEC-2026-0487", # malformed SVCB/HTTPS text can panic; hickory-proto 0.25.2 via rama-dns/rama-tcp
+    "RUSTSEC-2026-0489", # lone-quote SVCB/HTTPS text can panic; hickory-proto 0.25.2 via rama-dns/rama-tcp
+    "RUSTSEC-2026-0490", # long zone-file tokens can panic; hickory-proto 0.25.2 via rama-dns/rama-tcp
+    "RUSTSEC-2026-0491", # untrusted DNS header counts can amplify memory use; hickory-proto 0.25.2 via rama-dns/rama-tcp
     "RUSTSEC-2026-0194", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     "RUSTSEC-2026-0195", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     "RUSTSEC-2026-0370", # zvariant 4.2.0 via zbus 4.4.0 in Linux TUI and keyring/secret-service; remove when those paths migrate off the retired standalone crates
