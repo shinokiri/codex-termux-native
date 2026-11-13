@@ -35,6 +35,7 @@ class PrepareTest(unittest.TestCase):
         (root / "codex-rs").mkdir()
         (root / "codex-rs/Cargo.lock").write_text(
             f'[[package]]\nname = "v8"\nversion = "{build.V8_VERSION}"\n'
+            f'source = "{build.V8_WRAPPER_SOURCE}"\n'
         )
         (root / "patches").mkdir()
         (root / "patches/termux-rusty-v8-bindgen.patch").write_text(
@@ -88,6 +89,17 @@ class PrepareTest(unittest.TestCase):
             run.reset_mock()
             (gn / "src_binding.rs").write_text("mismatched binding")
             with self.assertRaisesRegex(RuntimeError, "paired outputs differ"):
+                build.prepare(self.args)
+            run.assert_not_called()
+            # Even a valid cached pair cannot authorize an unreviewed wrapper.
+            (gn / "src_binding.rs").write_text("src_binding.rs")
+            lock = build.ROOT / "codex-rs/Cargo.lock"
+            lock.write_text(
+                lock.read_text().replace(
+                    build.V8_WRAPPER_SOURCE, "git+https://example.invalid/changed"
+                )
+            )
+            with self.assertRaisesRegex(RuntimeError, "changed V8 Rust wrapper"):
                 build.prepare(self.args)
             run.assert_not_called()
 

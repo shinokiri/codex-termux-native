@@ -25,6 +25,13 @@ RUST = "1.99.1"
 NDK = "28.2.13676358"
 V8_VERSION = "152.2.0"
 V8_COMMIT = "2768994f664e8a6e3aba27503606c58339136e2a"
+# This wrapper differs from the engine checkout only in Rust cppgc alignment.
+# Re-review its C++/binding inputs when upstream changes the immutable revision.
+V8_WRAPPER_SOURCE = (
+    "git+https://github.com/openai-oss-forks/rusty_v8.git"
+    "?rev=90a65f887a0c0f048f3784afbcb320b373c8a2e0"
+    "#90a65f887a0c0f048f3784afbcb320b373c8a2e0"
+)
 # Bump when changing V8 build logic not represented by v8_inputs().
 # Packaging-only edits should not cause another full V8 compilation.
 V8_BUILD_REVISION = 1
@@ -77,6 +84,11 @@ def prepare(args):
     versions = {p["version"] for p in lock["package"] if p["name"] == "v8"}
     if versions != {V8_VERSION}:
         raise RuntimeError(f"Review the V8 source pin for Cargo versions {versions}")
+    wrappers = {p.get("source") for p in lock["package"] if p["name"] == "v8"}
+    if wrappers != {V8_WRAPPER_SOURCE}:
+        raise RuntimeError(
+            "Review the changed V8 Rust wrapper before reusing engine inputs"
+        )
     args.work_dir.mkdir(parents=True, exist_ok=True)
     gn = args.work_dir / "v8-target" / TARGET / "release/gn_out"
     if (gn / "v8-build.json").is_file():
@@ -465,6 +477,7 @@ def package(args):
         "ndk": NDK,
         "rustc": output(["rustc", f"+{RUST}", "--version"]),
         "v8_version": V8_VERSION,
+        "v8_rust_wrapper_source": V8_WRAPPER_SOURCE,
         "v8_commit": V8_COMMIT,
         "v8_submodules": output(
             ["git", "submodule", "status", "--recursive"], cwd=args.source

@@ -102,9 +102,35 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.169.0 integration
+
+The current source baseline is official `rust-v0.169.0`. Android keeps upstream's
+terminal workspace, provider onboarding, project-trust enforcement and session
+startup changes. The installation ID moved to `codex-runtime-agent-instance`;
+its Android adapter retains shared reads, exclusive initialization and rechecks.
+Thread writers retain upstream's shared coordination and nonblocking cleanup.
+The native checks now include runtime-agent-instance regression tests.
+
+The new WebSocket revisions and V8 cppgc alignment fix remain intact. The V8
+Rust wrapper is rebuilt; its C++ engine, Android bindings and build inputs match
+the existing verified cache. Source preparation rejects an unreviewed wrapper
+revision even when its version number and cached engine inputs appear unchanged.
+The package records the Rust wrapper source separately from the engine revision.
+
+Canonical Cargo and Bazel locks retain the earlier dependency fixes and advance
+`zip` to 9.5.1, `zstd-safe` to 8.3.0 and `zstd-sys` to 2.1.3. Upstream now includes
+the SQLite 3.54.1 and OpenSSL fixes previously backported by this port. The
+reviewed crypto-bigint, pin-utils and Hickory exceptions remain: Hickory 0.26.3
+on a new dependency path does not fix Rama's remaining Hickory 0.25.2 path.
+
+Client version, originator, authentication and model-catalog logic remain those
+of the corresponding official release. Android still reports its actual platform
+and terminal details. Server-side model rollout rules are not public; identical
+model availability across platforms cannot be guaranteed.
+
 ## Upstream 0.167.0 integration
 
-The current source baseline is official `rust-v0.167.0`. The integration retains
+The 0.167.0 integration used official `rust-v0.167.0`. The integration retained
 upstream's agent command center, backend switching and draft preservation,
 provider-independent history, image thumbnails, network-approval cleanup and
 bounded Code Mode output. Package updates retain upstream's Unix working-directory
