@@ -6891,7 +6891,7 @@ fn local_dev_builds_force_file_mcp_oauth_store_modes() {
 }
 
 #[tokio::test]
-async fn feedback_enabled_defaults_to_true() -> std::io::Result<()> {
+async fn feedback_enabled_follows_platform_defaults() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
         feedback: Some(FeedbackConfigToml::default()),
@@ -6905,8 +6905,31 @@ async fn feedback_enabled_defaults_to_true() -> std::io::Result<()> {
     )
     .await?;
 
-    assert_eq!(config.feedback_enabled, true);
+    assert_eq!(config.feedback_enabled, !cfg!(target_os = "android"));
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_analytics_keeps_independent_feedback_configuration() -> std::io::Result<()> {
+    for analytics in [false, true] {
+        for feedback in [None, Some(false), Some(true)] {
+            let codex_home = TempDir::new()?;
+            let mut contents = format!("[analytics]\nenabled = {analytics}\n");
+            if let Some(enabled) = feedback {
+                contents.push_str(&format!("[feedback]\nenabled = {enabled}\n"));
+            }
+            let cfg = toml::from_str(&contents).expect("valid feedback configuration");
+            let config = Config::load_from_base_config_with_overrides(
+                cfg,
+                ConfigOverrides::default(),
+                codex_home.abs(),
+            )
+            .await?;
+            assert_eq!(config.analytics_enabled, Some(analytics));
+            assert_eq!(config.feedback_enabled, feedback.unwrap_or(true));
+        }
+    }
     Ok(())
 }
 

@@ -19,50 +19,56 @@ pub fn build_provider(
     service_name_override: Option<&str>,
     default_analytics_enabled: bool,
 ) -> Result<Option<OtelProvider>, Box<dyn Error>> {
-    let to_otel_exporter = |kind: &Kind| match kind {
-        Kind::None => OtelExporter::None,
-        Kind::Statsig => OtelExporter::Statsig,
-        Kind::OtlpHttp {
-            endpoint,
-            headers,
-            protocol,
-            tls,
-        } => {
-            let protocol = match protocol {
-                Protocol::Json => OtelHttpProtocol::Json,
-                Protocol::Binary => OtelHttpProtocol::Binary,
-            };
+    let privacy_defaults = codex_analytics::use_privacy_defaults(config.analytics_enabled);
+    let to_otel_exporter = |kind: &Kind| {
+        if privacy_defaults {
+            return OtelExporter::None;
+        }
+        match kind {
+            Kind::None => OtelExporter::None,
+            Kind::Statsig => OtelExporter::Statsig,
+            Kind::OtlpHttp {
+                endpoint,
+                headers,
+                protocol,
+                tls,
+            } => {
+                let protocol = match protocol {
+                    Protocol::Json => OtelHttpProtocol::Json,
+                    Protocol::Binary => OtelHttpProtocol::Binary,
+                };
 
-            OtelExporter::OtlpHttp {
+                OtelExporter::OtlpHttp {
+                    endpoint: endpoint.clone(),
+                    headers: headers
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.as_str().to_owned()))
+                        .collect(),
+                    protocol,
+                    tls: tls.as_ref().map(|config| OtelTlsSettings {
+                        ca_certificate: config.ca_certificate.clone(),
+                        client_certificate: config.client_certificate.clone(),
+                        client_private_key: config.client_private_key.clone(),
+                    }),
+                }
+            }
+            Kind::OtlpGrpc {
+                endpoint,
+                headers,
+                tls,
+            } => OtelExporter::OtlpGrpc {
                 endpoint: endpoint.clone(),
                 headers: headers
                     .iter()
                     .map(|(name, value)| (name.clone(), value.as_str().to_owned()))
                     .collect(),
-                protocol,
                 tls: tls.as_ref().map(|config| OtelTlsSettings {
                     ca_certificate: config.ca_certificate.clone(),
                     client_certificate: config.client_certificate.clone(),
                     client_private_key: config.client_private_key.clone(),
                 }),
-            }
+            },
         }
-        Kind::OtlpGrpc {
-            endpoint,
-            headers,
-            tls,
-        } => OtelExporter::OtlpGrpc {
-            endpoint: endpoint.clone(),
-            headers: headers
-                .iter()
-                .map(|(name, value)| (name.clone(), value.as_str().to_owned()))
-                .collect(),
-            tls: tls.as_ref().map(|config| OtelTlsSettings {
-                ca_certificate: config.ca_certificate.clone(),
-                client_certificate: config.client_certificate.clone(),
-                client_private_key: config.client_private_key.clone(),
-            }),
-        },
     };
 
     let exporter = to_otel_exporter(&config.otel.exporter);

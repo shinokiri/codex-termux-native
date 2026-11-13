@@ -397,7 +397,7 @@ impl AnalyticsEventsClient {
             analytics_enabled,
             runtime_auth,
             api_key_headers,
-            /*allow_uploads*/ !cfg!(target_os = "android"),
+            /*allow_uploads*/ !crate::use_privacy_defaults(analytics_enabled),
         )
     }
 
@@ -410,8 +410,8 @@ impl AnalyticsEventsClient {
         allow_uploads: bool,
     ) -> Self {
         let request_metadata_enabled = analytics_enabled != Some(false);
-        // Android keeps the configured request metadata while independently
-        // forbidding event collection, capture files, workers and uploads.
+        // Android keeps upstream request metadata while uploads default off.
+        // Explicit settings retain the upstream behavior.
         if !request_metadata_enabled || !allow_uploads {
             return Self {
                 queue: None,

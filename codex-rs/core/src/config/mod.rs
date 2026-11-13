@@ -4786,7 +4786,9 @@ impl Config {
                 .or(cfg.disable_paste_burst)
                 .unwrap_or(false),
             analytics_enabled: cfg.analytics.as_ref().and_then(|a| a.enabled),
-            feedback_enabled: !cfg!(target_os = "android")
+            feedback_enabled: !codex_analytics::use_privacy_defaults(
+                cfg.analytics.as_ref().and_then(|a| a.enabled),
+            )
                 && cfg
                     .feedback
                     .as_ref()

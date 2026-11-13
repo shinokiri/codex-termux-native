@@ -89,6 +89,19 @@ pub use turn_critical_path::TurnCriticalPathDurations;
 #[cfg(test)]
 mod tests;
 
+/// Apply the Android privacy defaults only while analytics is unspecified.
+/// Explicit true or false retains the upstream meaning of that configuration.
+pub fn use_privacy_defaults(analytics_enabled: Option<bool>) -> bool {
+    privacy_defaults_for_platform(
+        analytics_enabled,
+        /*android*/ cfg!(target_os = "android"),
+    )
+}
+
+fn privacy_defaults_for_platform(analytics_enabled: Option<bool>, android: bool) -> bool {
+    android && analytics_enabled.is_none()
+}
+
 pub fn now_unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

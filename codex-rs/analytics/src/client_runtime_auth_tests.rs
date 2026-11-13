@@ -38,10 +38,14 @@ async fn emit(client: &AnalyticsEventsClient, execution_id: &str) {
 #[tokio::test]
 async fn local_upload_policy_preserves_metadata_across_clone_and_auth_changes() {
     for analytics_enabled in [None, Some(false), Some(true)] {
-        for allow_uploads in [false, true] {
+        for android in [false, true] {
+            let allow_uploads = !crate::privacy_defaults_for_platform(analytics_enabled, android);
             let server = MockServer::start().await;
             let expected_metadata = analytics_enabled != Some(false);
-            let expected_uploads = expected_metadata && allow_uploads;
+            let expected_uploads = match analytics_enabled {
+                None => !android,
+                Some(enabled) => enabled,
+            };
             Mock::given(path("/codex/analytics-events/events"))
                 .respond_with(ResponseTemplate::new(200))
                 .expect(if expected_uploads { 3 } else { 0 })
