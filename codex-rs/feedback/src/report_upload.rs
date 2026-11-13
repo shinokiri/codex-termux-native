@@ -49,10 +49,6 @@ pub struct FeedbackTransport {
 
 impl FeedbackTransport {
     pub fn new(http_client_factory: HttpClientFactory) -> Result<Self> {
-        anyhow::ensure!(
-            !cfg!(target_os = "android"),
-            "feedback uploads are disabled on Android; save the report locally"
-        );
         Ok(Self {
             client_pool: RouteAwareClientPool::new_without_redirects_or_request_logging(
                 http_client_factory,

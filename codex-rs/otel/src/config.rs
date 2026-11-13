@@ -11,18 +11,12 @@ pub(crate) const STATSIG_API_KEY_HEADER: &str = "statsig-api-key";
 pub(crate) const STATSIG_API_KEY: &str = "client-MkRuleRQBd6qakfnDYqJVR9JuXcY57Ljly3vi5JVUIO";
 
 pub(crate) fn resolve_exporter(exporter: &OtelExporter) -> OtelExporter {
-    resolve_exporter_for_platform(exporter, /*android*/ cfg!(target_os = "android"))
-}
-
-fn resolve_exporter_for_platform(exporter: &OtelExporter, android: bool) -> OtelExporter {
-    // Request metadata must never enable optional Android telemetry, including
-    // explicitly configured collectors and exporters inherited by subprocesses.
-    if android {
-        return OtelExporter::None;
-    }
     match exporter {
         OtelExporter::Statsig => {
-            // Keep the built-in exporter off during local development.
+            // Keep the built-in Statsig default off in debug builds so
+            // incremental local development and test runs do not emit
+            // best-effort OTEL traffic unless a test or binary opts into an
+            // explicit exporter configuration.
             if cfg!(debug_assertions) {
                 return OtelExporter::None;
             }
@@ -114,38 +108,7 @@ pub enum OtelExporter {
 #[cfg(test)]
 mod tests {
     use super::OtelExporter;
-    use super::OtelHttpProtocol;
     use super::resolve_exporter;
-    use super::resolve_exporter_for_platform;
-
-    #[test]
-    fn android_disables_builtin_and_custom_exporters() {
-        let http = OtelExporter::OtlpHttp {
-            endpoint: "http://127.0.0.1:4318/v1/metrics".to_string(),
-            headers: Default::default(),
-            protocol: OtelHttpProtocol::Json,
-            tls: None,
-        };
-        let grpc = OtelExporter::OtlpGrpc {
-            endpoint: "http://127.0.0.1:4317".to_string(),
-            headers: Default::default(),
-            tls: None,
-        };
-        for exporter in [&OtelExporter::None, &OtelExporter::Statsig, &http, &grpc] {
-            assert!(matches!(
-                resolve_exporter_for_platform(exporter, /*android*/ true),
-                OtelExporter::None
-            ));
-        }
-        assert!(matches!(
-            resolve_exporter_for_platform(&http, /*android*/ false),
-            OtelExporter::OtlpHttp { .. }
-        ));
-        assert!(matches!(
-            resolve_exporter_for_platform(&grpc, /*android*/ false),
-            OtelExporter::OtlpGrpc { .. }
-        ));
-    }
 
     #[test]
     fn statsig_default_metrics_exporter_is_disabled_in_debug_builds() {

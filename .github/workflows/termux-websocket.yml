@@ -96,6 +96,14 @@ jobs:
         id: compaction
         continue-on-error: true
         run: just test --locked -p codex-core --lib --test all -E 'test(compact_remote::provider_automatic_compaction_uses_v2_responses_endpoint)'
+      - name: Verify explicit analytics and independent feedback settings
+        id: privacy
+        continue-on-error: true
+        run: >-
+          just test --locked -p codex-core --lib
+          -E 'test(explicit_analytics_keeps_independent_feedback_configuration)
+          or test(feedback_enabled_follows_platform_defaults)
+          or test(analytics_disabled_preserves_managed_metrics_exporter)'
       - name: Check the affected crate with Clippy
         id: clippy
         continue-on-error: true
@@ -113,6 +121,7 @@ jobs:
           VERTEX: ${{ steps.vertex.outcome }}
           COMPACTION: ${{ steps.compaction.outcome }}
           CLIPPY: ${{ steps.clippy.outcome }}
+          PRIVACY: ${{ steps.privacy.outcome }}
         run: |
           test "$TRANSPORT" = "success"
           test "$RECOVERY" = "success"
@@ -120,6 +129,7 @@ jobs:
           test "$VERTEX" = "success"
           test "$COMPACTION" = "success"
           test "$CLIPPY" = "success"
+          test "$PRIVACY" = "success"
       - name: Retain corrections for review
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

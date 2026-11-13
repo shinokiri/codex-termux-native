@@ -2,24 +2,42 @@
 
 ## Android privacy and request metadata
 
-Starting with package revision 16, Android independently disables optional
-analytics event collection and delivery while keeping the upstream default
-`analytics_enabled=true` in inference request metadata. No analytics queue,
-capture file or upload worker is created, including when `[analytics] enabled`
-is explicitly `true`. Cloning or rebinding the client to another account retains
-the local upload block. Explicit `[analytics] enabled = false` still makes both
-the request header and body advertise `false`.
+Starting with package revision 17, only an **unset** `analytics.enabled` selects
+Android's privacy defaults. In this mode inference request metadata retains
+`analytics_enabled=true`, while analytics collection and uploads, built-in
+Statsig, custom OTLP exports and feedback uploads remain disabled. No analytics
+queue, capture file or upload worker is created. Local feedback ZIP saving still
+works.
 
-Android also disables built-in Statsig and custom OTLP log, trace and metrics
-exporters, and feedback uploads. Configuring a collector or enabling feedback
-does not bypass this policy. Saving a diagnostic report locally remains
-available. Normal inference, authentication, feature configuration and required
-task traffic remain separate from these optional telemetry paths.
+An explicit `analytics.enabled` value opts into the official interpretation of
+that value, without an additional port-specific switch:
 
-This is a deliberate request-metadata compatibility choice, not proof of
-eligibility for a private model experiment. The server-side meaning and use of
-the field are not established by client tests. Account data-use settings remain
-separate, and normal inference still sends the task context needed to respond.
+| User configuration | Request metadata | Analytics events | Built-in Statsig metrics | Custom OTLP and feedback |
+| --- | --- | --- | --- | --- |
+| Unset | `true` | Disabled | Disabled | Disabled by Android privacy defaults |
+| `true` | `true` | Official enabled behavior | Official configured/default behavior | Follow their independent official settings |
+| `false` | `false` | Disabled | Disabled | Follow their independent official settings |
+
+To try official default reporting, put this in the user-level config and restart
+Codex processes using that config:
+
+```toml
+[analytics]
+enabled = true
+```
+
+Leave `otel` and `feedback` unconfigured for their official defaults. Explicit
+OTLP collectors are independent of `analytics.enabled`; setting it to `false`
+does not disable a configured collector. Feedback is also independently
+controlled by `feedback.enabled`. To return to the Android privacy defaults,
+remove the `analytics.enabled` entry and restart. CLI configuration overrides
+follow the same rules; existing clients preserve their selected policy when
+cloned or rebound to another authentication context.
+
+Ordinary inference, authentication and feature configuration remain separate
+from optional telemetry. Matching request metadata or enabling reporting does
+not establish eligibility for a private model experiment. Normal inference
+still sends task context, and account data-use settings remain separate.
 
 ## Release scheduling
 

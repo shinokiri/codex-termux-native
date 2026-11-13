@@ -640,10 +640,6 @@ impl FeedbackSnapshot {
         options: FeedbackUploadOptions<'_>,
         http_client_factory: &HttpClientFactory,
     ) -> Result<()> {
-        anyhow::ensure!(
-            !cfg!(target_os = "android"),
-            "feedback uploads are disabled on Android; save the report locally"
-        );
         self.upload_feedback_with_dsn(
             options,
             http_client_factory,
