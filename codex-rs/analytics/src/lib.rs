@@ -92,7 +92,10 @@ mod tests;
 /// Apply the Android privacy defaults only while analytics is unspecified.
 /// Explicit true or false retains the upstream meaning of that configuration.
 pub fn use_privacy_defaults(analytics_enabled: Option<bool>) -> bool {
-    privacy_defaults_for_platform(analytics_enabled, /*android*/ cfg!(target_os = "android"))
+    privacy_defaults_for_platform(
+        analytics_enabled,
+        /*android*/ cfg!(target_os = "android"),
+    )
 }
 
 fn privacy_defaults_for_platform(analytics_enabled: Option<bool>, android: bool) -> bool {
