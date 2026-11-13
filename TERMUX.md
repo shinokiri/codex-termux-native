@@ -123,6 +123,13 @@ the SQLite 3.54.1 and OpenSSL fixes previously backported by this port. The
 reviewed crypto-bigint, pin-utils and Hickory exceptions remain: Hickory 0.26.3
 on a new dependency path does not fix Rama's remaining Hickory 0.25.2 path.
 
+The five additional DNSSEC-only advisories from [official PR #61156](https://github.com/openai/codex/pull/61156)
+are covered by matching reviewed exceptions. Native CI verifies that Hickory's
+DNSSEC features remain disabled even with all Android workspace features enabled.
+Reassess these exceptions before enabling DNSSEC; remove them after Rama moves to
+the fixed Hickory dependency graph. The earlier parser/DNS memory advisories above
+remain unresolved and are not covered by the DNSSEC feature argument.
+
 Client version, originator, authentication and model-catalog logic remain those
 of the corresponding official release. Android still reports its actual platform
 and terminal details. Server-side model rollout rules are not public; identical

@@ -54,6 +54,36 @@ jobs:
           version: "0.11.3"
       - name: Verify workspace manifests
         run: python3 .github/scripts/verify_cargo_workspace_manifests.py
+      - name: Verify the DNSSEC advisory exception remains unreachable on Android
+        run: |
+          cargo metadata --manifest-path codex-rs/Cargo.toml --locked --all-features \
+            --filter-platform aarch64-linux-android --format-version 1 \
+            > "${RUNNER_TEMP}/termux-feature-graph.json"
+          python3 - "${RUNNER_TEMP}/termux-feature-graph.json" <<'PYCODE'
+          import json
+          import sys
+          graph = json.load(open(sys.argv[1]))
+          packages = {
+              p["id"]: p for p in graph["packages"]
+              if p["name"] in {"hickory-proto", "hickory-resolver"}
+              and p["version"].startswith("0.25.")
+          }
+          observed = []
+          for node in graph["resolve"]["nodes"]:
+              if node["id"] not in packages:
+                  continue
+              package = packages[node["id"]]
+              features = node["features"]
+              assert not any("dnssec" in f.lower() for f in features), (
+                  "Reassess RUSTSEC-2026-0504/0505/0511/0512/0514 before enabling DNSSEC",
+                  package["name"], features,
+              )
+              observed.append({"name": package["name"], "version": package["version"], "features": features})
+          assert {p["name"] for p in observed} == {"hickory-proto", "hickory-resolver"}, (
+              "Review removal of the Hickory 0.25 DNSSEC exceptions after dependency migration"
+          )
+          print(json.dumps({"android_dnssec_disabled_with_all_features": observed}, sort_keys=True))
+          PYCODE
       - name: Test locks, HTTP, WebSocket, shell and keyring behavior
         id: tests
         continue-on-error: true
