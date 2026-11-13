@@ -257,7 +257,7 @@ impl std::fmt::Debug for ModelClientState {
             )
             .field("include_attestation", &self.include_attestation)
             .field("attestation_provider", &self.attestation_provider)
-            .field("disable_websockets", &self.disable_websockets)
+            .field("websocket_fallback", &self.websocket_fallback)
             .field(
                 "agent_identity_session_fallback",
                 &self.agent_identity_session_fallback,
