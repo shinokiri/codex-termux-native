@@ -117,6 +117,7 @@ pub(crate) struct AnalyticsEventsQueue {
 #[derive(Clone)]
 pub struct AnalyticsEventsClient {
     queue: Option<AnalyticsEventsQueue>,
+    request_metadata_enabled: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -390,6 +391,34 @@ impl AnalyticsEventsClient {
         runtime_auth: Option<(RuntimeAuthSlot, RuntimeAuthMode)>,
         api_key_headers: HeaderMap,
     ) -> Self {
+        Self::new_with_upload_policy(
+            auth_manager,
+            base_url,
+            analytics_enabled,
+            runtime_auth,
+            api_key_headers,
+            /*allow_uploads*/ !cfg!(target_os = "android"),
+        )
+    }
+
+    fn new_with_upload_policy(
+        auth_manager: Arc<AuthManager>,
+        base_url: impl Into<ChatgptBaseUrl>,
+        analytics_enabled: Option<bool>,
+        runtime_auth: Option<(RuntimeAuthSlot, RuntimeAuthMode)>,
+        api_key_headers: HeaderMap,
+        allow_uploads: bool,
+    ) -> Self {
+        let request_metadata_enabled = analytics_enabled != Some(false);
+        // Android keeps the configured request metadata while independently
+        // forbidding event collection, capture files, workers and uploads.
+        if !request_metadata_enabled || !allow_uploads {
+            return Self {
+                queue: None,
+                request_metadata_enabled,
+            };
+        }
+
         let base_url = base_url.into();
         let runtime_auth = runtime_auth.filter(|_| match &base_url {
             ChatgptBaseUrl::Default => true,
@@ -400,13 +429,12 @@ impl AnalyticsEventsClient {
         });
         let destination = AnalyticsEventsDestination::from_base_url(base_url, api_key_headers);
         Self {
-            // Mobile tool waits must not create background event-upload traffic.
-            // Preserve an explicit user choice to enable or disable analytics.
-            queue: analytics_enabled
-                .unwrap_or(!cfg!(target_os = "android"))
-                .then(|| {
-                    AnalyticsEventsQueue::new(Arc::clone(&auth_manager), destination, runtime_auth)
-                }),
+            queue: Some(AnalyticsEventsQueue::new(
+                auth_manager,
+                destination,
+                runtime_auth,
+            )),
+            request_metadata_enabled,
         }
     }
 
@@ -418,17 +446,21 @@ impl AnalyticsEventsClient {
         runtime_auth: Option<(RuntimeAuthSlot, RuntimeAuthMode)>,
         api_key_headers: HeaderMap,
     ) -> Self {
-        Self::new_with_runtime(
+        Self::new_with_upload_policy(
             auth_manager,
             base_url,
-            Some(self.queue.is_some()),
+            Some(self.request_metadata_enabled),
             runtime_auth,
             api_key_headers,
+            /*allow_uploads*/ self.is_enabled(),
         )
     }
 
     pub fn disabled() -> Self {
-        Self { queue: None }
+        Self {
+            queue: None,
+            request_metadata_enabled: false,
+        }
     }
 
     pub async fn flush(&self) {
@@ -456,6 +488,11 @@ impl AnalyticsEventsClient {
 
     pub fn is_enabled(&self) -> bool {
         self.queue.is_some()
+    }
+
+    /// Request metadata does not grant permission to collect or upload events.
+    pub fn request_metadata_enabled(&self) -> bool {
+        self.request_metadata_enabled
     }
 
     pub fn track_plugin_measurements(&self, mut input: PluginMeasurementsInput) {

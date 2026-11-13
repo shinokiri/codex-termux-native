@@ -48,11 +48,12 @@ jobs:
         with:
           version: "0.11.3"
       - name: Verify upstream transport and mobile telemetry behavior
-        run: just test --locked -p codex-api -p codex-otel
+        run: just test --locked -p codex-api -p codex-otel -p codex-feedback
       - name: Check affected transport and telemetry crates
         run: |
           just fix -p codex-api --locked --lib
           just fix -p codex-otel --locked --lib
+          just fix -p codex-feedback --locked --lib
       - name: Format the final changes
         run: just fmt
       - name: Retain corrections for review

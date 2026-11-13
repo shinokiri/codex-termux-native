@@ -36,6 +36,59 @@ async fn emit(client: &AnalyticsEventsClient, execution_id: &str) {
 }
 
 #[tokio::test]
+async fn local_upload_policy_preserves_metadata_across_clone_and_auth_changes() {
+    for analytics_enabled in [None, Some(false), Some(true)] {
+        for allow_uploads in [false, true] {
+            let server = MockServer::start().await;
+            let expected_metadata = analytics_enabled != Some(false);
+            let expected_uploads = expected_metadata && allow_uploads;
+            Mock::given(path("/codex/analytics-events/events"))
+                .respond_with(ResponseTemplate::new(200))
+                .expect(if expected_uploads { 3 } else { 0 })
+                .mount(&server)
+                .await;
+            let client = AnalyticsEventsClient::new_with_upload_policy(
+                AuthManager::from_auth_for_testing(CodexAuth::from_api_key("key-a")),
+                server.uri(),
+                analytics_enabled,
+                /*runtime_auth*/ None,
+                /*api_key_headers*/ Default::default(),
+                allow_uploads,
+            );
+            let cloned = client.clone();
+            let resumed = client.for_auth_context(
+                AuthManager::from_auth_for_testing(CodexAuth::from_api_key("key-b")),
+                server.uri(),
+                /*runtime_auth*/ None,
+                /*api_key_headers*/ Default::default(),
+            );
+            for (index, current) in [&client, &cloned, &resumed].into_iter().enumerate() {
+                assert_eq!(current.request_metadata_enabled(), expected_metadata);
+                assert_eq!(current.is_enabled(), expected_uploads);
+                emit(current, &format!("policy-{index}")).await;
+            }
+            assert_eq!(
+                server.received_requests().await.unwrap().len(),
+                if expected_uploads { 3 } else { 0 }
+            );
+            server.verify().await;
+        }
+    }
+}
+
+#[test]
+fn disabled_client_keeps_explicit_opt_out_after_auth_change() {
+    let client = AnalyticsEventsClient::disabled().for_auth_context(
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("unused-key")),
+        "http://127.0.0.1:1".to_string(),
+        /*runtime_auth*/ None,
+        /*api_key_headers*/ Default::default(),
+    );
+    assert!(!client.request_metadata_enabled());
+    assert!(!client.is_enabled());
+}
+
+#[tokio::test]
 async fn runtime_delivery_signs_each_batch_and_strips_cross_origin_auth() {
     for mode in [RuntimeAuthMode::DualHeader, RuntimeAuthMode::AssertionOnly] {
         let server = MockServer::start().await;
@@ -74,6 +127,7 @@ async fn runtime_delivery_signs_each_batch_and_strips_cross_origin_auth() {
         );
         // Inject the selected context at the delivery boundary for the loopback fixture.
         let client = AnalyticsEventsClient {
+            request_metadata_enabled: true,
             queue: Some(AnalyticsEventsQueue::new(
                 credentials,
                 AnalyticsEventsDestination::Http {
@@ -202,6 +256,7 @@ async fn analytics_between_model_calls_keeps_the_selected_api_resources() {
             info.build_header_map().unwrap(),
         );
         let analytics = AnalyticsEventsClient {
+            request_metadata_enabled: true,
             queue: Some(AnalyticsEventsQueue::new(
                 Arc::clone(&credentials),
                 destination,

@@ -1,5 +1,28 @@
 # Release automation checks
 
+## Android privacy and request metadata
+
+Starting with package revision 16, Android independently disables optional
+analytics event collection and delivery while keeping the upstream default
+`analytics_enabled=true` in inference request metadata. No analytics queue,
+capture file or upload worker is created, including when `[analytics] enabled`
+is explicitly `true`. Cloning or rebinding the client to another account retains
+the local upload block. Explicit `[analytics] enabled = false` still makes both
+the request header and body advertise `false`.
+
+Android also disables built-in Statsig and custom OTLP log, trace and metrics
+exporters, and feedback uploads. Configuring a collector or enabling feedback
+does not bypass this policy. Saving a diagnostic report locally remains
+available. Normal inference, authentication, feature configuration and required
+task traffic remain separate from these optional telemetry paths.
+
+This is a deliberate request-metadata compatibility choice, not proof of
+eligibility for a private model experiment. The server-side meaning and use of
+the field are not established by client tests. Account data-use settings remain
+separate, and normal inference still sends the task context needed to respond.
+
+## Release scheduling
+
 `termux-release.yml` checks the latest official stable release and builds only
 when the corresponding Termux package has not been published. Its five-minute
 cron is a requested schedule, not a delivery guarantee. GitHub can delay or drop

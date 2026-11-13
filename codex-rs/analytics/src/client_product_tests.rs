@@ -214,6 +214,7 @@ async fn buffered_tool_events_preserve_attribution_or_drop_it_on_queue_overflow(
             codex_login::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
         );
         let client = AnalyticsEventsClient {
+            request_metadata_enabled: true,
             queue: Some(AnalyticsEventsQueue::new(
                 manager,
                 destination,
