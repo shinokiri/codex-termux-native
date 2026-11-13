@@ -102,9 +102,44 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.169.0 integration
+
+The current source baseline is official `rust-v0.169.0`. Android keeps upstream's
+terminal workspace, provider onboarding, project-trust enforcement and session
+startup changes. The installation ID moved to `codex-runtime-agent-instance`;
+its Android adapter retains shared reads, exclusive initialization and rechecks.
+Thread writers retain upstream's shared coordination and nonblocking cleanup.
+The native checks now include runtime-agent-instance regression tests.
+
+The new WebSocket revisions and V8 cppgc alignment fix remain intact. The V8
+Rust wrapper is rebuilt; its C++ engine, Android bindings and build inputs match
+the existing verified cache. Source preparation rejects an unreviewed wrapper
+revision even when its version number and cached engine inputs appear unchanged.
+The package records the Rust wrapper source separately from the engine revision.
+
+Canonical Cargo and Bazel locks retain the earlier dependency fixes and advance
+`zip` to 9.5.1, `zstd-safe` to 8.3.0 and `zstd-sys` to 2.1.3. Upstream now includes
+the SQLite 3.54.1 and OpenSSL fixes previously backported by this port. The
+reviewed crypto-bigint, pin-utils and Hickory exceptions remain: Hickory 0.26.3
+on a new dependency path does not fix Rama's remaining Hickory 0.25.2 path.
+
+The five additional DNSSEC-only advisories from [official PR #61156](https://github.com/openai/codex/pull/61156)
+are covered by matching reviewed exceptions. Native CI verifies that Hickory's
+DNSSEC features remain disabled even with all Android workspace features enabled.
+Reassess these exceptions before enabling DNSSEC; remove them after Rama moves to
+the fixed Hickory dependency graph. The earlier parser/DNS memory advisories above
+remain unresolved and are not covered by the DNSSEC feature argument.
+
+Client version, originator, authentication and model-catalog logic remain those
+of the corresponding official release. Android still reports its actual platform
+and terminal details. Android's default analytics setting also changes the
+`analytics_enabled` value sent in inference metadata. Server-side rollout rules
+are not public: an unchanged model catalog or requested model name does not prove
+eligibility for a hidden backend model-routing experiment.
+
 ## Upstream 0.167.0 integration
 
-The current source baseline is official `rust-v0.167.0`. The integration retains
+The 0.167.0 integration used official `rust-v0.167.0`. The integration retained
 upstream's agent command center, backend switching and draft preservation,
 provider-independent history, image thumbnails, network-approval cleanup and
 bounded Code Mode output. Package updates retain upstream's Unix working-directory
@@ -576,15 +611,20 @@ tradeoff, not a measured battery-life improvement.
 
 The built-in Statsig metrics exporter remains disabled on Android to avoid
 periodic background uploads; explicitly configured OTLP exporters remain
-available. This changes diagnostic reporting, not model request processing.
+available. This exporter sends metrics and does not read feature configurations.
+That does not establish whether telemetry affects private server-side experiment
+eligibility or analysis.
 
 Android also uses startup, explicit status queries, inference notifications and
 recovery events to refresh account usage instead of polling while idle. Analytics
 event uploads default to off on Android and continue to honor an explicit choice.
+The actual analytics state is sent as `analytics_enabled` in inference request
+metadata, so this default is a server-visible difference from upstream.
 
 Quota displays may remain stale while idle; startup, explicit status queries,
 inference notifications and recovery events still refresh usage. Analytics can
-be explicitly enabled when diagnostic event reporting is wanted.
+be explicitly enabled when diagnostic event reporting is wanted. This enables
+event uploads but does not override the Android-specific Statsig exporter block.
 
 Release builds require CLI, native compatibility, WebSocket recovery, transport,
 telemetry and mobile UI regressions against the same prepared commit. The

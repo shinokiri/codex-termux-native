@@ -67,31 +67,59 @@ jobs:
           cargo build --locked --profile test -p codex-rmcp-client --bin test_stdio_server
           test -x "$CARGO_BIN_EXE_test_stdio_server"
       - name: Test transport recovery and existing retry behavior
+        id: transport
+        continue-on-error: true
         run: >-
           just test --locked -p codex-core --lib --test all
           -E '(test(websocket) or test(responses_retry) or test(retry_after))
           and not test(websocket_recovery::)'
       - name: Require the recovery scenarios to run
+        id: recovery
+        continue-on-error: true
         # A missing recovery module must fail instead of passing the older suite alone.
         run: >-
           just test --locked -p codex-core --lib --test all
           -E 'test(websocket_recovery::)'
       - name: Require incremental tool declarations, compaction and resume scenarios
+        id: incremental
+        continue-on-error: true
         run: >-
           just test --locked -p codex-core --lib --test all
           -E 'test(scenarios::incremental_tools::)
           or test(scenarios::incremental_tools_resume::)
           or test(base_instructions::catalog_and_model_changes_preserve_the_window_base)'
-      - name: Require Vertex authentication, tool declarations and provider compaction
-        run: |
-          just test --locked -p codex-core --lib --test all -E 'test(gcp::)'
-          just test --locked -p codex-core --lib --test all -E 'test(compact_remote::provider_automatic_compaction_uses_v2_responses_endpoint)'
+      - name: Require Vertex authentication and tool declarations
+        id: vertex
+        continue-on-error: true
+        run: just test --locked -p codex-core --lib --test all -E 'test(gcp::)'
+      - name: Require provider compaction
+        id: compaction
+        continue-on-error: true
+        run: just test --locked -p codex-core --lib --test all -E 'test(compact_remote::provider_automatic_compaction_uses_v2_responses_endpoint)'
       - name: Check the affected crate with Clippy
+        id: clippy
+        continue-on-error: true
         run: just fix -p codex-core --locked --lib
       - name: Check generated changes
         run: |
           git diff --binary > "${RUNNER_TEMP}/termux-websocket.patch"
           git diff --exit-code
+      - name: Require every WebSocket and provider check to pass
+        if: always() && !cancelled()
+        env:
+          TRANSPORT: ${{ steps.transport.outcome }}
+          RECOVERY: ${{ steps.recovery.outcome }}
+          INCREMENTAL: ${{ steps.incremental.outcome }}
+          VERTEX: ${{ steps.vertex.outcome }}
+          COMPACTION: ${{ steps.compaction.outcome }}
+          CLIPPY: ${{ steps.clippy.outcome }}
+        run: |
+          test "$TRANSPORT" = "success"
+          test "$RECOVERY" = "success"
+          test "$INCREMENTAL" = "success"
+          test "$VERTEX" = "success"
+          test "$COMPACTION" = "success"
+          test "$CLIPPY" = "success"
       - name: Retain corrections for review
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
