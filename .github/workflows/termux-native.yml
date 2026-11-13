@@ -75,7 +75,7 @@ jobs:
               package = packages[node["id"]]
               features = node["features"]
               assert not any("dnssec" in f.lower() for f in features), (
-                  "Reassess RUSTSEC-2026-0504/0505/0511/0512/0514 before enabling DNSSEC",
+                  "Reassess RUSTSEC-2026-0504/0505/0511/0512/0514/0530/0531/0532 before enabling DNSSEC",
                   package["name"], features,
               )
               observed.append({"name": package["name"], "version": package["version"], "features": features})
