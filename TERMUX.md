@@ -132,8 +132,10 @@ remain unresolved and are not covered by the DNSSEC feature argument.
 
 Client version, originator, authentication and model-catalog logic remain those
 of the corresponding official release. Android still reports its actual platform
-and terminal details. Server-side model rollout rules are not public; identical
-model availability across platforms cannot be guaranteed.
+and terminal details. Android's default analytics setting also changes the
+`analytics_enabled` value sent in inference metadata. Server-side rollout rules
+are not public: an unchanged model catalog or requested model name does not prove
+eligibility for a hidden backend model-routing experiment.
 
 ## Upstream 0.167.0 integration
 
@@ -609,15 +611,20 @@ tradeoff, not a measured battery-life improvement.
 
 The built-in Statsig metrics exporter remains disabled on Android to avoid
 periodic background uploads; explicitly configured OTLP exporters remain
-available. This changes diagnostic reporting, not model request processing.
+available. This exporter sends metrics and does not read feature configurations.
+That does not establish whether telemetry affects private server-side experiment
+eligibility or analysis.
 
 Android also uses startup, explicit status queries, inference notifications and
 recovery events to refresh account usage instead of polling while idle. Analytics
 event uploads default to off on Android and continue to honor an explicit choice.
+The actual analytics state is sent as `analytics_enabled` in inference request
+metadata, so this default is a server-visible difference from upstream.
 
 Quota displays may remain stale while idle; startup, explicit status queries,
 inference notifications and recovery events still refresh usage. Analytics can
-be explicitly enabled when diagnostic event reporting is wanted.
+be explicitly enabled when diagnostic event reporting is wanted. This enables
+event uploads but does not override the Android-specific Statsig exporter block.
 
 Release builds require CLI, native compatibility, WebSocket recovery, transport,
 telemetry and mobile UI regressions against the same prepared commit. The
