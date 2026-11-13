@@ -120,6 +120,7 @@ mod product_tests;
 impl AnalyticsEventsClient {
     pub(crate) fn new_for_capture_file(auth_manager: Arc<AuthManager>, path: PathBuf) -> Self {
         Self {
+            request_metadata_enabled: true,
             queue: Some(AnalyticsEventsQueue::new(
                 auth_manager,
                 AnalyticsEventsDestination::CaptureFile { path },
@@ -305,7 +306,13 @@ fn client_with_receiver() -> (
         app_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
         plugin_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
     };
-    (AnalyticsEventsClient { queue: Some(queue) }, receiver)
+    (
+        AnalyticsEventsClient {
+            queue: Some(queue),
+            request_metadata_enabled: true,
+        },
+        receiver,
+    )
 }
 
 #[test]

@@ -658,6 +658,9 @@ fn build_otlp_metric_exporter(
     temporality: Temporality,
     factory: &codex_http_client::HttpClientFactory,
 ) -> Result<opentelemetry_otlp::MetricExporter> {
+    if cfg!(target_os = "android") {
+        return Err(MetricsError::ExporterDisabled);
+    }
     match exporter {
         OtelExporter::None => Err(MetricsError::ExporterDisabled),
         OtelExporter::Statsig => build_otlp_metric_exporter(

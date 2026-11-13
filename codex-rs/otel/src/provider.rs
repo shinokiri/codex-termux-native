@@ -194,8 +194,10 @@ impl OtelProvider {
     }
 
     pub fn try_new(settings: &OtelSettings) -> Result<Option<Self>, Box<dyn Error>> {
-        let log_enabled = !matches!(settings.exporter, OtelExporter::None);
-        let trace_enabled = !matches!(settings.trace_exporter, OtelExporter::None);
+        let log_enabled =
+            !cfg!(target_os = "android") && !matches!(settings.exporter, OtelExporter::None);
+        let trace_enabled =
+            !cfg!(target_os = "android") && !matches!(settings.trace_exporter, OtelExporter::None);
         let metric_exporter = crate::config::resolve_exporter(&settings.metrics_exporter);
         let metrics_enabled = !matches!(metric_exporter, OtelExporter::None);
 
