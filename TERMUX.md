@@ -102,9 +102,23 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.170.0 integration
+
+The source baseline is official `rust-v0.170.0`. The bundled catalog includes
+GPT-6.2 Sol and Astra, with Sol selected by default. The Android port retains
+the upstream WebRTC negotiation and oversized WebSocket request fixes.
+
+The Cargo and Bazel locks include the XML dependency updates from
+[OpenAI PR #62068](https://github.com/openai/codex/pull/62068). The Android
+checks use the advisory decisions from
+[OpenAI PR #62067](https://github.com/openai/codex/pull/62067) for the
+unmaintained `chrono` dependency and three DNSSEC advisories affecting Hickory
+0.25.2. The native check verifies that DNSSEC is disabled for this dependency
+on Android with all workspace features enabled.
+
 ## Upstream 0.169.0 integration
 
-The current source baseline is official `rust-v0.169.0`. Android keeps upstream's
+The 0.169.0 integration used official `rust-v0.169.0`. Android keeps upstream's
 terminal workspace, provider onboarding, project-trust enforcement and session
 startup changes. The installation ID moved to `codex-runtime-agent-instance`;
 its Android adapter retains shared reads, exclusive initialization and rechecks.
