@@ -10,11 +10,33 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler
 
-from scripts.termux.check_release_schedule import assess, check, main
+from scripts.termux.check_release_schedule import (
+    assess,
+    check,
+    main,
+    published_after_failure,
+)
+from scripts.termux.release import ASSETS
 
 
 NOW = datetime(2026, 9, 28, 12, tzinfo=timezone.utc)
+TAG = "termux-v0.171.0+termux.17"
+TARGET_LINE = f"2026-09-28T11:32:01.1234567Z termux_release={TAG}\r\n".encode()
+FAILED_AT = "2026-09-28T11:35:00Z"
+
+
+def publication(**changes):
+    return {
+        "tag_name": TAG,
+        "published_at": "2026-09-28T11:45:00Z",
+        "html_url": "https://github.com/example/repo/releases/tag/" + TAG,
+        "draft": False,
+        "prerelease": False,
+        "assets": [{"name": name, "state": "uploaded", "size": 1} for name in ASSETS],
+        **changes,
+    }
 
 
 def run(identifier, created_at, **changes):
@@ -146,6 +168,102 @@ class ReleaseScheduleTest(unittest.TestCase):
             api.repo.call_args.args, ("actions/runs/7/jobs?per_page=100&page=2",)
         )
 
+    def test_publication_recovers_the_failed_target_and_preserves_timer_health(self):
+        failed = run(
+            7, "2026-09-28T11:30:00Z", conclusion="failure", updated_at=FAILED_AT
+        )
+        manual = run(8, "2026-09-28T11:50:00Z", event="workflow_dispatch")
+        prepare = {
+            "id": 9,
+            "name": "prepare",
+            "conclusion": "failure",
+            "html_url": "job/9",
+        }
+        for state, threshold, issues in (
+            ("active", 60, []),
+            (
+                "active",
+                20,
+                ["No new scheduled release run for 30.0 minutes (limit: 20 minutes)."],
+            ),
+            ("disabled_manually", 60, ["Release workflow is disabled_manually."]),
+        ):
+            with self.subTest(state=state, threshold=threshold):
+                api = Mock(token="test-token")
+                api.repo.side_effect = [
+                    {"state": state},
+                    {"workflow_runs": [manual, failed]},
+                    {"total_count": 1, "jobs": [prepare]},
+                    publication(),
+                ]
+                with patch(
+                    "scripts.termux.check_release_schedule.urlopen",
+                    return_value=io.BytesIO(TARGET_LINE * 2),
+                ) as open_log:
+                    report = check(api, NOW, threshold)
+                self.assertEqual(report["issues"], issues)
+                self.assertEqual(report["healthy"], not issues)
+                self.assertEqual(report["latest_scheduled_run"]["id"], 7)
+                self.assertEqual(report["failed_jobs"][0]["url"], "job/9")
+                self.assertEqual(report["recovered_release"]["tag_name"], TAG)
+                api.repo.assert_called_with("releases/tags/termux-v0.171.0%2Btermux.17")
+                request = open_log.call_args.args[0]
+                self.assertEqual(
+                    request.get_header("Authorization"), "Bearer test-token"
+                )
+                redirect = HTTPRedirectHandler().redirect_request(
+                    request, None, 302, "", {}, "https://storage.example/job.log"
+                )
+                self.assertIsNone(redirect.get_header("Authorization"))
+
+    def test_unpublished_wrong_old_or_incomplete_package_keeps_failure_open(self):
+        missing_checksum = [
+            a for a in publication()["assets"] if a["name"] != ASSETS[1]
+        ]
+        for release in (
+            None,
+            publication(tag_name="termux-v0.171.0+termux.18"),
+            publication(draft=True),
+            publication(prerelease=True),
+            publication(published_at="2026-09-28T11:34:59Z"),
+            publication(published_at=FAILED_AT),
+            publication(assets=missing_checksum),
+            publication(assets=[dict(a, size=0) for a in publication()["assets"]]),
+            publication(assets=[dict(a, state="new") for a in publication()["assets"]]),
+        ):
+            with (
+                self.subTest(release=release),
+                patch(
+                    "scripts.termux.check_release_schedule.urlopen",
+                    return_value=io.BytesIO(TARGET_LINE),
+                ),
+            ):
+                api = Mock(token=None)
+                api.repo.return_value = release
+                self.assertIsNone(published_after_failure(api, 9, FAILED_AT))
+
+    def test_missing_ambiguous_or_expired_target_keeps_failure_open(self):
+        api = Mock(token=None)
+        for content in (
+            b"no target here\n",
+            b"echo " + TARGET_LINE,
+            TARGET_LINE + TARGET_LINE.replace(b"termux.17", b"termux.18"),
+        ):
+            with (
+                self.subTest(content=content),
+                patch(
+                    "scripts.termux.check_release_schedule.urlopen",
+                    return_value=io.BytesIO(content),
+                ),
+            ):
+                self.assertIsNone(published_after_failure(api, 9, FAILED_AT))
+        with patch(
+            "scripts.termux.check_release_schedule.urlopen",
+            side_effect=HTTPError("https://api.github.com/", 410, "Gone", {}, None),
+        ):
+            self.assertIsNone(published_after_failure(api, 9, FAILED_AT))
+        api.repo.assert_not_called()
+
     def test_api_failure_is_saved_and_returns_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "health.json"
@@ -158,13 +276,15 @@ class ReleaseScheduleTest(unittest.TestCase):
                 patch("scripts.termux.check_release_schedule.GitHub") as github,
                 redirect_stdout(io.StringIO()),
             ):
-                github.return_value.repo.side_effect = HTTPError(
+                unavailable = HTTPError(
                     "https://api.github.com/",
                     503,
                     "Service Unavailable",
                     {},
-                    None,
+                    io.BytesIO(),
                 )
+                self.addCleanup(unavailable.close)
+                github.return_value.repo.side_effect = unavailable
                 self.assertEqual(main(), 1)
             report = json.loads(output.read_text())
             self.assertFalse(report["healthy"])

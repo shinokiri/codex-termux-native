@@ -61,21 +61,23 @@ python3 scripts/termux/check_release_schedule.py --output release-schedule.json
 
 An existing `GH_TOKEN` is used when provided. Exit status 1 means the workflow is
 disabled, no original scheduled event arrived within the alert threshold, the
-latest scheduled run did not succeed, or GitHub could not be queried. The default
-threshold is 480 minutes (eight hours), configurable with `--max-age-minutes`.
+latest scheduled run has an unresolved failure, or GitHub could not be queried.
+The default threshold is 480 minutes (eight hours), configurable with
+`--max-age-minutes`.
 This accommodates the accepted hourly delivery cadence: the September 28, 2026
 audit of 100 scheduled runs found intervals of 111–403 minutes. The threshold
 controls when a scheduling gap becomes an error; the release cron still requests
-a check every five minutes. Failed runs, disabled workflows and API errors remain
-errors regardless of this age threshold. A recent queued or running release is
-reported as pending work, without treating it as a failed build.
+a check every five minutes. Unresolved failures, disabled workflows and API
+errors remain errors regardless of this age threshold. A recent queued or
+running release is reported as pending work, without treating it as a failed build.
 
 Only `event=schedule` with its original `created_at` timestamp advances the
 scheduler's clock. A manual check, push-triggered run or retry can confirm release
-logic but does not demonstrate a new timer event. A historical failed run remains
-visible until a newer scheduled run arrives, even if the package was subsequently
-published manually. Use the linked job and release history to distinguish these
-cases. This diagnosis never starts builds, retries failed jobs or publishes.
+logic. A failed run and its job links stay in the report. The monitor clears
+its release alert when the exact Termux tag recorded in the prepare log has a
+stable release published after that failure, with the Android archive, checksum
+file and installer all uploaded. The summary links to the recovered release.
+The original scheduled event continues to determine the timer's age.
 
 When a scheduled check reports `release-needs-maintenance`, inspect the original
 failed release run and repair its prepared source before dispatching a retry.
