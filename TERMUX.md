@@ -102,6 +102,17 @@ The native update-command regression also covers empty and partial failed
 downloads: neither executes the installer, and both retain curl's exit status.
 The existing daemon tests run in the same job.
 
+## Upstream 0.171.0 integration
+
+This release uses official `rust-v0.171.0`, including the default TUI workspace,
+thread-specific drafts and the updated CLI. On Android the OAuth store continues
+to use the native file-lock adapter, and the TUI refreshes rate limits on demand.
+
+HTTP response decoding and OTLP HTTP export now need the zstd 0.13 API. Their
+lock entries select zstd 0.13.5 and zstd-safe 7.4.1. The existing zstd 0.14.3
+and zstd-safe 8.3.0 consumers share zstd-sys 2.1.3 with the new path.
+These versions include the applicable RustSec fixes.
+
 ## Upstream 0.170.0 integration
 
 The source baseline is official `rust-v0.170.0`. The bundled catalog includes
