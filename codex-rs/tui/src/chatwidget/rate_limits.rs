@@ -195,6 +195,19 @@ fn has_usable_workspace_credits(credits: &CreditsSnapshot) -> bool {
 }
 
 impl ChatWidget {
+    pub(crate) fn quota_provider_id(&self) -> &str {
+        if self.thread_id().is_none()
+            && let Some(provider) = &self.inherited_quota_provider
+        {
+            return provider;
+        }
+        &self.config.model_provider_id
+    }
+
+    pub(crate) fn forget_inherited_quota_provider(&mut self) {
+        self.inherited_quota_provider = None;
+    }
+
     /// Poll more often near exhaustion on desktop. Android uses startup, explicit
     /// status/usage requests, inference notifications, and recovery events instead
     /// of periodic network traffic while the terminal is idle or waiting on tools.
@@ -241,7 +254,25 @@ impl ChatWidget {
     }
 
     pub(crate) fn on_rate_limit_snapshot(&mut self, snapshot: Option<RateLimitSnapshot>) {
+        if let Some(snapshot) = &snapshot {
+            self.observe_quota_plan(snapshot);
+        }
         self.on_rate_limit_snapshot_from(snapshot, RateLimitSnapshotSource::AccountUsage);
+    }
+
+    pub(crate) fn observe_quota_plan(&mut self, snapshot: &RateLimitSnapshot) {
+        if snapshot
+            .limit_id
+            .as_deref()
+            .is_none_or(|id| id.eq_ignore_ascii_case("codex"))
+            && let Some(plan) = snapshot.plan_type.filter(|plan| *plan != PlanType::Unknown)
+        {
+            self.quota_plan = Some(plan);
+            if self.plan_type != Some(plan) {
+                self.refresh_billing_plan();
+                self.refresh_status_surfaces();
+            }
+        }
     }
 
     pub(crate) fn on_rolling_rate_limit_snapshot(&mut self, snapshot: RateLimitSnapshot) {
@@ -291,8 +322,6 @@ impl ChatWidget {
                         balance: credits.balance.clone(),
                     });
             }
-            self.plan_type = snapshot.plan_type.or(self.plan_type);
-
             if is_codex_limit
                 && (matches!(source, RateLimitSnapshotSource::AccountUsage)
                     || snapshot.spend_control_reached.is_some())
@@ -411,6 +440,8 @@ impl ChatWidget {
             }
         } else {
             self.rate_limit_snapshots_by_limit_id.clear();
+            self.quota_plan = None;
+            self.refresh_billing_plan();
             self.codex_rate_limit_reached_type = None;
             self.codex_spend_control_reached = None;
         }

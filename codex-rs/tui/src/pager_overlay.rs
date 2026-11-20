@@ -149,9 +149,9 @@ fn render_navigation_hints(area: Rect, buf: &mut Buffer, keymap: &PagerKeymap) {
         ("jump_top", &keymap.jump_top),
         ("jump_bottom", &keymap.jump_bottom),
     ];
-    let hints = actions
-        .as_chunks::<2>()
-        .0
+    const ACTIONS_PER_HINT: usize = 2;
+    let (action_groups, _) = actions.as_chunks::<ACTIONS_PER_HINT>();
+    let hints = action_groups
         .iter()
         .zip(["to scroll", "to page", "to jump"])
         .map(|(actions, description)| {
