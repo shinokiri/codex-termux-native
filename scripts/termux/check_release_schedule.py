@@ -6,18 +6,22 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 from statistics import median
+from urllib.error import HTTPError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 if __package__:
-    from .release import GitHub
+    from .release import ASSETS, REPOSITORY, GitHub
 else:
-    from release import GitHub
+    from release import ASSETS, REPOSITORY, GitHub
 
 
 WORKFLOW = "actions/workflows/termux-release.yml"
 
 
-def assess(workflow, runs, now, max_age_minutes):
+def assess(workflow, runs, now, max_age_minutes, *, inspect_failure=None):
     # A manual run or rerun must not reset the scheduler's clock. created_at
     # records the original event; updated_at and run_started_at can move on rerun.
     scheduled = sorted(
@@ -33,6 +37,7 @@ def assess(workflow, runs, now, max_age_minutes):
         (newer - older).total_seconds() / 60 for newer, older in zip(times, times[1:])
     ]
     issues = []
+    details = {}
     if workflow["state"] != "active":
         issues.append(f"Release workflow is {workflow['state']}.")
     latest = None
@@ -61,9 +66,12 @@ def assess(workflow, runs, now, max_age_minutes):
                 f"(limit: {max_age_minutes} minutes)."
             )
         if latest["status"] == "completed" and latest["conclusion"] != "success":
-            issues.append(
-                f"Latest scheduled release run concluded {latest['conclusion']}."
-            )
+            if inspect_failure is not None:
+                details = inspect_failure(scheduled[0])
+            if not details.get("recovered_release"):
+                issues.append(
+                    f"Latest scheduled release run concluded {latest['conclusion']}."
+                )
     return {
         "checked_at": now.isoformat(),
         "healthy": not issues,
@@ -79,7 +87,98 @@ def assess(workflow, runs, now, max_age_minutes):
         else None,
         "latest_scheduled_run": latest,
         "issues": issues,
+        **details,
     }
+
+
+def published_after_failure(api, prepare_id, failed_at):
+    # release.py prints the selected tag even when source preparation later fails.
+    request = Request(
+        f"https://api.github.com/repos/{REPOSITORY}/actions/jobs/{prepare_id}/logs"
+    )
+    if api.token:
+        # GitHub redirects to a signed download on a different host.
+        request.add_unredirected_header("Authorization", f"Bearer {api.token}")
+    target_line = re.compile(
+        rb"\d{4}-\d{2}-\d{2}T[\d:.]+Z "
+        rb"termux_release=(termux-v\d+\.\d+\.\d+\+termux\.[1-9]\d*)"
+    )
+    try:
+        with urlopen(request, timeout=30) as log:
+            tags = {
+                match[1].decode("ascii")
+                for line in log
+                if (match := target_line.fullmatch(line.rstrip()))
+            }
+    except HTTPError as error:
+        if error.code in (403, 404, 410):
+            error.close()
+            return None
+        raise
+    if len(tags) != 1:
+        return None
+    tag = tags.pop()
+    release = api.repo(f"releases/tags/{quote(tag, safe='')}")
+    if (
+        not release
+        or release["tag_name"] != tag
+        or release["draft"]
+        or release["prerelease"]
+    ):
+        return None
+    published_at = release.get("published_at")
+    if not published_at or (
+        datetime.fromisoformat(published_at) <= datetime.fromisoformat(failed_at)
+    ):
+        return None
+    uploaded = {
+        asset["name"]
+        for asset in release["assets"]
+        if asset["state"] == "uploaded" and asset["size"] > 0
+    }
+    if not uploaded.issuperset(ASSETS):
+        return None
+    return {key: release[key] for key in ("tag_name", "published_at", "html_url")}
+
+
+def failure_details(api, run):
+    details = {"failed_jobs": []}
+    prepare_id = None
+    page = 1
+    while True:
+        jobs = api.repo(f"actions/runs/{run['id']}/jobs?per_page=100&page={page}")
+        if jobs is None:
+            raise RuntimeError("The failed scheduled run's jobs are unavailable.")
+        for job in jobs["jobs"]:
+            if job.get("name") == "prepare":
+                prepare_id = job["id"]
+            if job["conclusion"] in (
+                "failure",
+                "timed_out",
+                "cancelled",
+                "action_required",
+            ):
+                details["failed_jobs"].append(
+                    {
+                        "name": job["name"],
+                        "conclusion": job["conclusion"],
+                        "url": job["html_url"],
+                        "failed_steps": [
+                            step["name"]
+                            for step in job.get("steps", [])
+                            if step["conclusion"]
+                            in ("failure", "timed_out", "cancelled")
+                        ],
+                    }
+                )
+        if page * 100 >= jobs["total_count"]:
+            break
+        page += 1
+    if prepare_id is not None and run["conclusion"] == "failure":
+        recovered = published_after_failure(api, prepare_id, run["updated_at"])
+        if recovered:
+            details["recovered_release"] = recovered
+    return details
 
 
 def check(api, now, max_age_minutes):
@@ -87,40 +186,14 @@ def check(api, now, max_age_minutes):
     runs = api.repo(f"{WORKFLOW}/runs?event=schedule&per_page=100")
     if workflow is None or runs is None:
         raise RuntimeError("Release workflow or its run history is unavailable.")
-    report = assess(workflow, runs["workflow_runs"], now, max_age_minutes)
-    report["failed_jobs"] = []
-    latest = report["latest_scheduled_run"]
-    if latest and latest["status"] == "completed" and latest["conclusion"] != "success":
-        page = 1
-        while True:
-            jobs = api.repo(
-                f"actions/runs/{latest['id']}/jobs?per_page=100&page={page}"
-            )
-            if jobs is None:
-                raise RuntimeError("The failed scheduled run's jobs are unavailable.")
-            for job in jobs["jobs"]:
-                if job["conclusion"] in (
-                    "failure",
-                    "timed_out",
-                    "cancelled",
-                    "action_required",
-                ):
-                    report["failed_jobs"].append(
-                        {
-                            "name": job["name"],
-                            "conclusion": job["conclusion"],
-                            "url": job["html_url"],
-                            "failed_steps": [
-                                step["name"]
-                                for step in job.get("steps", [])
-                                if step["conclusion"]
-                                in ("failure", "timed_out", "cancelled")
-                            ],
-                        }
-                    )
-            if page * 100 >= jobs["total_count"]:
-                break
-            page += 1
+    report = assess(
+        workflow,
+        runs["workflow_runs"],
+        now,
+        max_age_minutes,
+        inspect_failure=lambda run: failure_details(api, run),
+    )
+    report.setdefault("failed_jobs", [])
     return report
 
 
@@ -171,6 +244,11 @@ def main():
                 output.write(
                     f"Observed intervals in minutes: min {gaps['min']}, "
                     f"median {gaps['median']}, max {gaps['max']}.\n\n"
+                )
+            if release := report.get("recovered_release"):
+                output.write(
+                    f"Release recovered. [{release['tag_name']}]({release['html_url']}) "
+                    f"was published at `{release['published_at']}` with all required assets.\n\n"
                 )
             for job in report.get("failed_jobs", []):
                 output.write(
