@@ -3,150 +3,170 @@
 
 import argparse
 import asyncio
+from contextlib import suppress
 import json
 import os
+import signal
 import stat
 from pathlib import Path
-import struct
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import tempfile
 
 
-async def send(process, message):
-    payload = json.dumps(message).encode()
-    process.stdin.write(struct.pack("<I", len(payload)) + payload)
-    await process.stdin.drain()
+async def code_mode(cli, directory):
+    # Let the packaged CLI launch the host and negotiate its own wire protocol.
+    calls = [
+        (
+            "save",
+            "const n = await Promise.resolve(6 * 7); "
+            "store('termux-smoke-answer', n); text('termux-saved:' + n);",
+        ),
+        ("load", "text('termux-loaded:' + load('termux-smoke-answer'));"),
+    ]
+    requests = []
 
+    class Responses(BaseHTTPRequestHandler):
+        def do_POST(self):
+            if self.path != "/v1/responses":
+                self.send_error(404)
+                return
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            index = len(requests)
+            requests.append(body["input"])
+            if index < len(calls):
+                call_id, source = calls[index]
+                item = {
+                    "type": "custom_tool_call",
+                    "call_id": call_id,
+                    "name": "exec",
+                    "input": source,
+                }
+            elif index == len(calls):
+                item = {
+                    "type": "message",
+                    "id": "done",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "smoke complete"}],
+                }
+            else:
+                self.send_error(409, "Unexpected extra Responses request")
+                return
+            tag = f"smoke-{index}"
+            events = [
+                {"type": "response.created", "response": {"id": tag}},
+                {"type": "response.output_item.done", "item": item},
+                {"type": "response.completed", "response": {"id": tag}},
+            ]
+            payload = "".join(
+                f"data: {json.dumps(event)}\n\n" for event in events
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
 
-async def receive(process):
-    length = struct.unpack("<I", await process.stdout.readexactly(4))[0]
-    if length > 64 * 1024 * 1024:
-        raise RuntimeError("Host sent an oversized protocol frame")
-    return json.loads(await process.stdout.readexactly(length))
+        def log_message(self, *_args):
+            pass
 
-
-def result(message):
-    response = message["result"]
-    if response["status"] != "ok":
-        raise RuntimeError(f"Host rejected the smoke check: {response['message']}")
-    return response["value"]
-
-
-async def operation(process, request_id, method, **fields):
-    await send(
-        process,
-        {
-            "type": "operation/request",
-            "id": request_id,
-            "request": {"method": method, "sessionId": "termux-smoke", **fields},
-        },
-    )
-
-
-async def response(process, request_id):
-    while True:
-        message = await receive(process)
-        if message["type"] == "cell/closed":
-            continue
-        if message["type"] != "operation/response" or message["id"] != request_id:
-            raise RuntimeError(f"Unexpected host message type: {message['type']}")
-        return result(message)
-
-
-async def execute(process, request_id, source):
-    await operation(
-        process,
-        request_id,
-        "session/execute",
-        request={
-            "tool_call_id": f"smoke-{request_id}",
-            "enabled_tools": [],
-            "source": source,
-            "yield_time_ms": 10000,
-            "max_output_tokens": 100,
-        },
-    )
-    started = None
-    completed = None
-    while started is None or completed is None:
-        message = await receive(process)
-        kind = message["type"]
-        if kind == "cell/closed":
-            continue
-        if message.get("id") != request_id:
-            raise RuntimeError(f"Unexpected host message type: {kind}")
-        if kind == "operation/response" and started is None:
-            started = result(message)
-            if started["type"] != "execution/started":
-                raise RuntimeError("Host did not start the JavaScript cell")
-        elif kind == "execute/initialResponse" and completed is None:
-            completed = result(message).get("Result")
-            if completed is None:
+    with ThreadingHTTPServer(("127.0.0.1", 0), Responses) as server:
+        home = Path(directory) / "code-mode"
+        home.mkdir()
+        (home / "config.toml").write_text(
+            'model = "termux-smoke"\nmodel_provider = "fixture"\n'
+            'approval_policy = "never"\nsuppress_unstable_features_warning = true\n'
+            '[model_providers.fixture]\nname = "Local smoke"\n'
+            f'base_url = "http://127.0.0.1:{server.server_port}/v1"\n'
+            'wire_api = "responses"\nrequires_openai_auth = false\n'
+            "request_max_retries = 0\nstream_max_retries = 0\n"
+            "[features]\ncode_mode_only = true\ncode_mode_host = true\n"
+            "memories = false\napps = false\nplugins = false\n"
+            "[analytics]\nenabled = false\n"
+            '[otel]\nexporter = "none"\ntrace_exporter = "none"\n'
+        )
+        env = {
+            k: os.environ[k]
+            for k in (
+                "PATH",
+                "PREFIX",
+                "TMPDIR",
+                "ANDROID_ROOT",
+                "ANDROID_DATA",
+                "HOME",
+                "LANG",
+                "SHELL",
+                "LD_LIBRARY_PATH",
+                "LD_PRELOAD",
+                "TERMUX_VERSION",
+            )
+            if k in os.environ
+        }
+        env.update(CODEX_HOME=str(home), NO_PROXY="127.0.0.1,localhost")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            process = await asyncio.create_subprocess_exec(
+                cli,
+                "exec",
+                "--ephemeral",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "read-only",
+                "--color",
+                "never",
+                "Run the local Code Mode smoke check.",
+                cwd=directory,
+                env=env,
+                start_new_session=True,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), 75)
+            finally:
+                if process.returncode is None:
+                    with suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                    await process.wait()
+            for _ in range(50):
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                raise RuntimeError("Code Mode left processes running after CLI exit")
+            if process.returncode or stdout.decode().strip() != "smoke complete":
                 raise RuntimeError(
-                    "Small JavaScript cell did not finish within 10 seconds"
+                    f"Code Mode CLI failed: {stderr.decode(errors='replace')[-1500:]}"
                 )
-        else:
-            raise RuntimeError(f"Unexpected host message type: {kind}")
-    if completed["cell_id"] != started["cellId"]:
-        raise RuntimeError("Execution response refers to a different cell")
-    if completed["error_text"]:
-        raise RuntimeError(f"JavaScript failed: {completed['error_text']}")
-    if completed["content_items"] != [
-        {"type": "input_text", "text": "termux-native:42"}
-    ]:
-        raise RuntimeError("JavaScript returned an unexpected value")
-
-
-async def code_mode(host, directory):
-    process = await asyncio.create_subprocess_exec(
-        host,
-        "--listen",
-        "stdio",
-        cwd=directory,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-    )
-    try:
-        await send(
-            process,
-            {
-                "type": "connection/hello",
-                "supportedVersions": [1],
-                "requiredCapabilities": [],
-                "optionalCapabilities": [],
-            },
+        finally:
+            server.shutdown()
+            thread.join()
+    outputs = {
+        v["call_id"]: v["output"]
+        for items in requests
+        for v in items
+        if v.get("type") == "custom_tool_call_output"
+    }
+    for call_id, expected in (
+        ("save", "termux-saved:42"),
+        ("load", "termux-loaded:42"),
+    ):
+        value = outputs.get(call_id, [])
+        parts = (
+            [value]
+            if isinstance(value, str)
+            else [part.get("text", "") for part in value]
         )
-        hello = await receive(process)
-        if hello["type"] != "connection/ready" or hello["selectedVersion"] != 1:
-            raise RuntimeError("Host did not accept protocol version 1")
-        await operation(process, 1, "session/open")
-        if await response(process, 1) != {
-            "type": "session/ready",
-            "sessionId": "termux-smoke",
-        }:
-            raise RuntimeError("Host did not open the temporary session")
-        await execute(
-            process,
-            2,
-            "const termuxAnswer = await Promise.resolve(6 * 7); "
-            "store('termux-smoke-answer', termuxAnswer); "
-            "text('termux-native:' + termuxAnswer);",
-        )
-        await execute(
-            process, 3, "text('termux-native:' + load('termux-smoke-answer'));"
-        )
-        await operation(process, 4, "session/shutdown")
-        if await response(process, 4) != {
-            "type": "session/closed",
-            "sessionId": "termux-smoke",
-        }:
-            raise RuntimeError("Host did not shut down the temporary session")
-        process.stdin.close()
-        if await asyncio.wait_for(process.wait(), 5) != 0:
-            raise RuntimeError("Host exited unsuccessfully")
-    finally:
-        if process.returncode is None:
-            process.kill()
-            await process.wait()
+        if not any(expected in part.splitlines() for part in parts):
+            raise RuntimeError(
+                f"Code Mode {call_id} returned an unexpected value: {value!r}"
+            )
 
 
 async def command(*args, directory, timeout):
@@ -209,6 +229,24 @@ async def app_server(binary, candidate):
                     raise RuntimeError("Protected socket directory is not private")
                 if stat.S_IMODE(physical.stat().st_mode) != 0o600:
                     raise RuntimeError("Control socket permissions are not private")
+
+                # Binding the socket precedes installation of the graceful shutdown handler.
+                status = Path(f"/proc/{process.pid}/status")
+                for _ in range(100):
+                    if process.returncode is not None:
+                        raise RuntimeError("Unix listener exited during startup")
+                    signals = next(
+                        line.split()[1]
+                        for line in status.read_text().splitlines()
+                        if line.startswith("SigCgt:")
+                    )
+                    if int(signals, 16) & (1 << (signal.SIGTERM - 1)):
+                        break
+                    await asyncio.sleep(0.1)
+                else:
+                    raise RuntimeError(
+                        "Unix listener did not register its shutdown handler"
+                    )
             finally:
                 if process.returncode is None:
                     process.terminate()
@@ -237,11 +275,9 @@ async def check(args):
             timeout=10,
         )
         await app_server(binary_dir / "codex", args.candidate.resolve())
-        await asyncio.wait_for(
-            code_mode(binary_dir / "codex-code-mode-host", directory), 45
-        )
+        await asyncio.wait_for(code_mode(binary_dir / "codex", directory), 90)
         print(
-            "PASS: CLI, standalone executor, protected Unix socket, JavaScript, Promise, cross-cell state, host shutdown",
+            "PASS: CLI, standalone executor, protected Unix socket, JavaScript, Promise, cross-cell state, CLI shutdown",
             flush=True,
         )
         if args.network:
