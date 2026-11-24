@@ -41,7 +41,8 @@ impl codex_extension_api::ToolLifecycleContributor for NotesMetadata {
         _turn: &codex_extension_api::ExtensionData,
         tool: &codex_extension_api::McpToolContext,
     ) -> Option<(&'static str, Value)> {
-        (tool.plugin_id.as_deref() == Some("env-a:notes")).then(|| ("x-notes-preview", json!(true)))
+        let is_notes_plugin = tool.plugin_id.as_deref() == Some("env-a:notes");
+        is_notes_plugin.then_some(("x-notes-preview", json!(true)))
     }
 
     fn on_mcp_tool_result<'a>(
