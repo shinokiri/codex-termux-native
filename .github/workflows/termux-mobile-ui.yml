@@ -58,7 +58,8 @@ jobs:
           test -x "$CARGO_BIN_EXE_test_stdio_server"
       - name: Verify analytics delivery and TUI behavior
         id: tests
-        run: just test --locked -p codex-analytics -p codex-tui -p codex-core-plugins
+        # Match the TUI test stack in codex-rs/tui/BUILD.bazel.
+        run: just --set rust_min_stack 25165824 test --locked -p codex-analytics -p codex-tui -p codex-core-plugins
       - name: Check affected analytics and TUI crates
         if: always() && !cancelled() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure')
         run: |
